@@ -6,6 +6,7 @@ import subprocess
 import threading
 import queue
 import sys
+import os
 
 
 class RunTab:
@@ -20,7 +21,15 @@ class RunTab:
         # Create main frame
         self.frame = ttk.Frame(parent, padding="20")
         
+        # Register cleanup on widget destroy
+        self.frame.bind('<Destroy>', self._on_destroy)
+        
         self.create_widgets()
+    
+    def _on_destroy(self, event):
+        """Cleanup when widget is destroyed"""
+        if event.widget == self.frame:
+            self.stop_bot()
     
     def create_widgets(self):
         """Create run tab widgets"""
@@ -137,9 +146,13 @@ class RunTab:
             font=('Consolas', 9),
             bg='#1e1e1e',
             fg='#d4d4d4',
-            insertbackground='white'
+            insertbackground='white',
+            state='normal'  # Allow text selection and copying
         )
         self.console.pack(fill='both', expand=True)
+        
+        # Enable text selection (readonly but copyable)
+        self.console.bind('<Control-c>', lambda e: None)  # Allow Ctrl+C
         
         # Configure tags for colored output
         self.console.tag_config('success', foreground='#4ec9b0')
@@ -206,13 +219,20 @@ class RunTab:
     def run_subprocess(self, cmd):
         """Run subprocess and capture output"""
         try:
+            # Set environment for unbuffered output
+            env = os.environ.copy()
+            env['PYTHONUNBUFFERED'] = '1'
+            
             self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                universal_newlines=True
+                universal_newlines=True,
+                env=env,
+                encoding='utf-8',
+                errors='replace'  # Replace invalid chars instead of crashing
             )
             
             # Read output line by line
@@ -232,46 +252,56 @@ class RunTab:
             self.output_queue.put(('error', str(e)))
     
     def read_output(self):
-        """Read output from queue and display"""
+        """Read output from queue and display (line-by-line)"""
         try:
+            # Process all available lines immediately
             while True:
-                msg_type, msg = self.output_queue.get_nowait()
-                
-                if msg_type == 'stdout':
-                    # Determine tag based on content
-                    if '✓' in msg or 'success' in msg.lower():
-                        tag = 'success'
-                    elif '✗' in msg or 'error' in msg.lower():
-                        tag = 'error'
-                    elif '⚠' in msg or 'warning' in msg.lower():
-                        tag = 'warning'
-                    else:
-                        tag = 'info'
+                try:
+                    msg_type, msg = self.output_queue.get_nowait()
                     
-                    self.log(msg.rstrip(), tag)
-                    
-                elif msg_type == 'done':
-                    if msg == 'success':
-                        self.log("\n" + "=" * 70, 'success')
-                        self.log("✓ Job search completed successfully!", 'success')
-                        self.main_window.set_status("Job search completed!", 'success')
-                    else:
-                        self.log("\n" + "=" * 70, 'error')
-                        self.log(f"✗ Job search failed: {msg}", 'error')
-                        self.main_window.set_status("Job search failed", 'error')
-                    
-                    self.cleanup_after_run()
-                    
-                elif msg_type == 'error':
-                    self.log(f"✗ Error: {msg}", 'error')
-                    self.cleanup_after_run()
-                    
-        except queue.Empty:
-            pass
+                    if msg_type == 'stdout':
+                        # Determine tag based on content
+                        if '✓' in msg or 'success' in msg.lower():
+                            tag = 'success'
+                        elif '✗' in msg or 'error' in msg.lower():
+                            tag = 'error'
+                        elif '⚠' in msg or 'warning' in msg.lower():
+                            tag = 'warning'
+                        else:
+                            tag = 'info'
+                        
+                        self.log(msg.rstrip(), tag)
+                        
+                    elif msg_type == 'done':
+                        if msg == 'success':
+                            self.log("\n" + "=" * 70, 'success')
+                            self.log("✓ Job search completed successfully!", 'success')
+                            self.main_window.set_status("Job search completed!", 'success')
+                        else:
+                            self.log("\n" + "=" * 70, 'error')
+                            self.log(f"✗ Job search failed: {msg}", 'error')
+                            self.main_window.set_status("Job search failed", 'error')
+                        
+                        self.cleanup_after_run()
+                        return  # Stop polling
+                        
+                    elif msg_type == 'error':
+                        self.log(f"✗ Error: {msg}", 'error')
+                        self.cleanup_after_run()
+                        return  # Stop polling
+                        
+                except queue.Empty:
+                    break
+            
+            # Force GUI update
+            self.console.update_idletasks()
+                        
+        except Exception as e:
+            print(f"Error in read_output: {e}")
         
-        # Continue reading if still running
+        # Continue reading if still running (fast polling for real-time feel)
         if self.is_running:
-            self.frame.after(100, self.read_output)
+            self.frame.after(5, self.read_output)  # 5ms = very responsive
     
     def stop_bot(self):
         """Stop the running bot"""
@@ -279,7 +309,13 @@ class RunTab:
             return
         
         try:
+            # Try graceful termination first
             self.process.terminate()
+            try:
+                self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                # Force kill if it doesn't terminate
+                self.process.kill()
             self.log("\n⏹️ Stopped by user", 'warning')
             self.main_window.set_status("Job search stopped", 'warning')
         except Exception as e:
@@ -299,6 +335,7 @@ class RunTab:
         """Add message to console"""
         self.console.insert('end', message + '\n', tag)
         self.console.see('end')
+        self.console.update_idletasks()  # Force immediate GUI refresh
     
     def clear_output(self):
         """Clear console output"""

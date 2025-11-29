@@ -6,6 +6,17 @@ ASYNC VERSION - Uses threading for parallel API calls and LLM analysis
 
 import sys
 import os
+
+# Fix Windows console encoding for Unicode characters (✓, ⚠, ✗, etc.)
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+# Force all print statements to flush immediately (critical for subprocess output capture)
+import functools
+print = functools.partial(print, flush=True)
+
 import json
 import time
 import argparse
@@ -23,6 +34,7 @@ import threading
 import queue
 import html
 import re
+import yaml
 from database import DatabaseManager
 
 # Add LLMStuff to path for LocalLLM import

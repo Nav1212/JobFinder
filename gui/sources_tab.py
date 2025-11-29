@@ -73,13 +73,14 @@ class SourcesTab:
         self.tree.pack(fill='both', expand=True)
         
         # Double-click to view details
-        self.tree.bind('<Double-1>', lambda e: self.view_source())
+        self.tree.bind('<Double-1>', lambda e: self.toggle_source())
         
         # Action buttons
         btn_frame = ttk.Frame(self.frame)
         btn_frame.pack(fill='x')
         
         ttk.Button(btn_frame, text="👁️ View Details", command=self.view_source).pack(side='left', padx=(0, 5))
+        ttk.Button(btn_frame, text="🔄 Toggle Enable/Disable", command=self.toggle_source).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="✏️ Edit JSON", command=self.edit_json).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="🔄 Reload", command=self.load_sources).pack(side='left', padx=5)
         
@@ -115,11 +116,33 @@ class SourcesTab:
             
             # Group by category
             categories = {}
-            for source_name, source_config in self.sources_data.items():
-                source_type = source_config.get('type', 'unknown')
+            
+            # Handle both array-based and dict-based structures
+            sources_list = []
+            if isinstance(self.sources_data, dict):
+                # Check if it's array-based (api_sources, scraper_sources)
+                if 'api_sources' in self.sources_data or 'scraper_sources' in self.sources_data:
+                    for key in ['api_sources', 'scraper_sources', 'other_sources']:
+                        if key in self.sources_data and isinstance(self.sources_data[key], list):
+                            sources_list.extend(self.sources_data[key])
+                else:
+                    # Flat dict structure: {source_name: config}
+                    for source_name, source_config in self.sources_data.items():
+                        if isinstance(source_config, dict):
+                            source_config['name'] = source_name
+                            sources_list.append(source_config)
+            
+            # Group sources by type
+            for source in sources_list:
+                if not isinstance(source, dict):
+                    continue
+                
+                source_name = source.get('name', 'Unknown')
+                source_type = source.get('type', 'unknown')
+                
                 if source_type not in categories:
                     categories[source_type] = []
-                categories[source_type].append((source_name, source_config))
+                categories[source_type].append((source_name, source))
             
             # Add to tree
             for category, sources in sorted(categories.items()):
@@ -163,11 +186,26 @@ class SourcesTab:
         if not source_name:
             return
         
-        if source_name not in self.sources_data:
+        # Find source in data
+        source_config = None
+        if isinstance(self.sources_data, dict):
+            # Array-based structure
+            if 'api_sources' in self.sources_data or 'scraper_sources' in self.sources_data:
+                for key in ['api_sources', 'scraper_sources', 'other_sources']:
+                    if key in self.sources_data and isinstance(self.sources_data[key], list):
+                        for src in self.sources_data[key]:
+                            if isinstance(src, dict) and src.get('name') == source_name:
+                                source_config = src
+                                break
+                    if source_config:
+                        break
+            else:
+                # Dict-based structure
+                source_config = self.sources_data.get(source_name)
+        
+        if not source_config:
             messagebox.showwarning("Not Found", f"Source '{source_name}' not found in data")
             return
-        
-        source_config = self.sources_data[source_name]
         
         # Create details window
         details_window = tk.Toplevel(self.frame)
@@ -294,3 +332,59 @@ class SourcesTab:
         ttk.Button(btn_frame, text="💾 Save", command=save_json).pack(side='left', padx=(0, 5))
         ttk.Button(btn_frame, text="✓ Validate", command=validate_json).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Cancel", command=editor_window.destroy).pack(side='right')
+    
+    def toggle_source(self):
+        """Toggle enabled/disabled status of selected source"""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a job source to toggle")
+            return
+        
+        item = self.tree.item(selection[0])
+        source_name = item['values'][0] if item['values'] else None
+        
+        if not source_name:
+            return
+        
+        # Find and toggle source in data
+        try:
+            toggled = False
+            if isinstance(self.sources_data, dict):
+                # Array-based structure
+                if 'api_sources' in self.sources_data or 'scraper_sources' in self.sources_data:
+                    for key in ['api_sources', 'scraper_sources', 'other_sources']:
+                        if key in self.sources_data and isinstance(self.sources_data[key], list):
+                            for src in self.sources_data[key]:
+                                if isinstance(src, dict) and src.get('name') == source_name:
+                                    # Toggle enabled status
+                                    current_status = src.get('enabled', True)
+                                    src['enabled'] = not current_status
+                                    toggled = True
+                                    new_status = "enabled" if src['enabled'] else "disabled"
+                                    break
+                        if toggled:
+                            break
+                else:
+                    # Dict-based structure
+                    if source_name in self.sources_data:
+                        current_status = self.sources_data[source_name].get('enabled', True)
+                        self.sources_data[source_name]['enabled'] = not current_status
+                        toggled = True
+                        new_status = "enabled" if self.sources_data[source_name]['enabled'] else "disabled"
+            
+            if not toggled:
+                messagebox.showerror("Error", f"Could not find source '{source_name}' in data")
+                return
+            
+            # Save changes to file
+            with open(self.sources_file, 'w', encoding='utf-8') as f:
+                json.dump(self.sources_data, f, indent=2)
+            
+            # Reload to update display
+            self.load_sources()
+            
+            self.main_window.set_status(f"'{source_name}' {new_status}", 'success')
+            
+        except Exception as e:
+            messagebox.showerror("Toggle Error", f"Failed to toggle source:\n{e}")
+            self.main_window.set_status("Failed to toggle source", 'error')
