@@ -1,0 +1,42 @@
+# Sensitive Data - DO NOT COMMIT
+*.db
+*.db-journal
+config.yaml
+.env
+
+# Job Results and Reports
+job_results_*.json
+job_report_*.txt
+job_tracking_*.json
+debug_*.html
+
+# Logs
+*.log
+scheduler_log.txt
+
+# Resumes (Personal Information)
+*.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

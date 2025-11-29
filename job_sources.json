@@ -1,0 +1,234 @@
+{
+  "api_sources": [
+    {
+      "name": "Arbeitnow",
+      "url": "https://www.arbeitnow.com/api/job-board-api",
+      "enabled": true,
+      "type": "api",
+      "parser": "arbeitnow",
+      "description": "Remote and international jobs"
+    },
+    {
+      "name": "Google Jobs API",
+      "url": "https://serpapi.com/search.json?engine=google_jobs",
+      "enabled": false,
+      "type": "api",
+      "parser": "google_jobs_api",
+      "description": "Google Jobs via SerpAPI (requires API key)"
+    },
+    {
+      "name": "Microsoft Careers API",
+      "url": "https://gcsservices.careers.microsoft.com/search/api/v1/search",
+      "enabled": true,
+      "type": "api",
+      "parser": "microsoft_api",
+      "description": "Microsoft job search API"
+    },
+    {
+      "name": "Microsoft Graph Jobs",
+      "url": "https://graph.microsoft.com/v1.0/jobs",
+      "enabled": false,
+      "type": "api",
+      "parser": "microsoft_graph",
+      "description": "Microsoft jobs via Graph API (requires OAuth token)"
+    },
+    {
+      "name": "Remotive",
+      "url": "https://remotive.com/api/remote-jobs",
+      "enabled": false,
+      "type": "api",
+      "parser": "remotive",
+      "description": "Remote jobs (DISABLED - recursion error)"
+    },
+    {
+      "name": "RemoteOK",
+      "url": "https://remoteok.com/api",
+      "enabled": false,
+      "type": "api",
+      "parser": "remoteok",
+      "description": "Remote jobs (DISABLED - recursion error)"
+    },
+    {
+      "name": "JSearch",
+      "url": "https://jsearch.p.rapidapi.com/search",
+      "enabled": false,
+      "type": "api",
+      "parser": "jsearch",
+      "description": "Job search aggregator (requires RapidAPI key)"
+    },
+    {
+      "name": "Adzuna",
+      "url": "https://api.adzuna.com/v1/api/jobs",
+      "enabled": false,
+      "type": "api",
+      "parser": "adzuna",
+      "description": "Job aggregator (requires API key, free tier available)"
+    }
+  ],
+  "playwright_sources": [
+    {
+      "name": "LinkedIn",
+      "url": "https://www.linkedin.com/jobs/search",
+      "enabled": true,
+      "type": "playwright",
+      "parser": "linkedin",
+      "description": "Professional networking site with extensive job listings"
+    },
+    {
+      "name": "Google Careers",
+      "url": "https://www.google.com/about/careers/applications/jobs/results",
+      "enabled": true,
+      "type": "playwright",
+      "parser": "google",
+      "description": "Google job listings"
+    },
+    {
+      "name": "Microsoft Careers",
+      "url": "https://careers.microsoft.com/professionals/us/en/search-results",
+      "enabled": false,
+      "type": "playwright",
+      "parser": "microsoft",
+      "description": "Microsoft job listings (DISABLED - using API instead)"
+    },
+    {
+      "name": "Amazon Jobs",
+      "url": "https://www.amazon.jobs/en/search",
+      "enabled": true,
+      "type": "playwright",
+      "parser": "amazon",
+      "description": "Amazon job listings"
+    },
+    {
+      "name": "Indeed CA",
+      "url": "https://indeed.ca/jobs",
+      "enabled": false,
+      "type": "playwright",
+      "parser": "indeed",
+      "countries": ["ca"],
+      "description": "Major job board (DISABLED - Cloudflare blocked)"
+    },
+    {
+      "name": "Indeed US",
+      "url": "https://indeed.com/jobs",
+      "enabled": false,
+      "type": "playwright",
+      "parser": "indeed",
+      "countries": ["us"],
+      "description": "Major job board (DISABLED - Cloudflare blocked)"
+    },
+    {
+      "name": "Glassdoor",
+      "url": "https://www.glassdoor.com/Job/jobs.htm",
+      "enabled": false,
+      "type": "playwright",
+      "parser": "glassdoor",
+      "description": "Job listings with company reviews (DISABLED - wrong selectors)"
+    },
+    {
+      "name": "ZipRecruiter",
+      "url": "https://www.ziprecruiter.com/jobs-search",
+      "enabled": false,
+      "type": "playwright",
+      "parser": "ziprecruiter",
+      "description": "Job aggregator (requires parser implementation)"
+    },
+    {
+      "name": "Monster",
+      "url": "https://www.monster.com/jobs/search",
+      "enabled": false,
+      "type": "playwright",
+      "parser": "monster",
+      "description": "Job board (requires parser implementation)"
+    }
+  ],
+  "scraping_sources": [
+    {
+      "name": "Dice",
+      "url": "https://www.dice.com/jobs",
+      "enabled": true,
+      "type": "scraping",
+      "parser": "dice",
+      "keywords": ["engineer", "developer", "data", "software"],
+      "description": "Tech-focused job board"
+    },
+    {
+      "name": "Google Careers API",
+      "url": "https://careers.google.com/api/v3/search",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "google_api",
+      "description": "Google careers API endpoint (requires parser implementation)"
+    },
+    {
+      "name": "Microsoft Jobs Feed",
+      "url": "https://careers.microsoft.com/professionals/us/en/search-results",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "microsoft_feed",
+      "description": "Microsoft job feed (requires parser implementation)"
+    },
+    {
+      "name": "Amazon Jobs RSS",
+      "url": "https://www.amazon.jobs/en/search.rss",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "amazon_rss",
+      "description": "Amazon jobs RSS feed (requires parser implementation)"
+    },
+    {
+      "name": "Stack Overflow Jobs",
+      "url": "https://stackoverflow.com/jobs",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "stackoverflow",
+      "description": "Developer jobs (requires custom parser)"
+    },
+    {
+      "name": "AngelList",
+      "url": "https://angel.co/jobs",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "angellist",
+      "description": "Startup jobs (requires custom parser)"
+    },
+    {
+      "name": "We Work Remotely",
+      "url": "https://weworkremotely.com/remote-jobs/search",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "weworkremotely",
+      "description": "Remote jobs (requires custom parser)"
+    },
+    {
+      "name": "Wellfound",
+      "url": "https://wellfound.com/jobs",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "wellfound",
+      "description": "Startup jobs, formerly AngelList (requires custom parser)"
+    },
+    {
+      "name": "SimplyHired",
+      "url": "https://www.simplyhired.com/search",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "simplyhired",
+      "description": "Job aggregator (requires custom parser)"
+    },
+    {
+      "name": "CareerBuilder",
+      "url": "https://www.careerbuilder.com/jobs",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "careerbuilder",
+      "description": "Job board (requires custom parser)"
+    }
+  ],
+  "notes": {
+    "api_sources": "No-signup APIs that return JSON. Add 'parser' key matching the parsing logic in fetch_api_async().",
+    "playwright_sources": "Sites requiring JavaScript rendering. Add 'parser' key matching logic in scrape_with_playwright_async().",
+    "scraping_sources": "Static HTML sites. Add 'parser' key and implement parsing logic in scrape_website_async().",
+    "adding_new_source": "Set enabled=true and implement the parser logic in job_finder_bot.py if needed.",
+    "how_to_add": "1. Add entry to appropriate array with enabled=false. 2. Test the API/URL manually. 3. Implement parser in job_finder_bot.py. 4. Set enabled=true."
+  }
+}

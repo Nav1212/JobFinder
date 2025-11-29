@@ -1,0 +1,11 @@
+# Job Finder Bot Configuration
+# Copy this file to config.yaml and fill in your details
+
+email:
+  sender: "your-email@gmail.com"
+  password: "your-app-password-here"  # Gmail App Password (16 characters)
+  
+paths:
+  resumes_dir: "../Resumes"  # Path to folder containing resume PDFs
+  database: "../jobs_database.db"  # Database location (outside repo)
+  logs_dir: "../JobFinderBot_Logs"  # Logs directory (outside repo)
