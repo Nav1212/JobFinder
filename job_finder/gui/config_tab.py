@@ -11,7 +11,8 @@ class ConfigTab:
     def __init__(self, parent, main_window):
         self.parent = parent
         self.main_window = main_window
-        self.config_path = Path(__file__).parent.parent / 'config.yaml'
+        # Config is at project root (JobFinderBot/config.yaml)
+        self.config_path = Path(__file__).parent.parent.parent / 'config.yaml'
         self.password_visible = False
         
         # Create main frame

@@ -9,7 +9,8 @@ class SourcesTab:
     def __init__(self, parent, main_window):
         self.parent = parent
         self.main_window = main_window
-        self.sources_file = Path(__file__).parent.parent / 'job_sources.json'
+        # Job sources at project root
+        self.sources_file = Path(__file__).parent.parent.parent / 'job_sources.json'
         self.sources_data = {}
         
         # Create main frame

@@ -35,13 +35,13 @@ import queue
 import html
 import re
 import yaml
-from database import DatabaseManager
+from .database import DatabaseManager
 
-# Add LLMStuff to path for LocalLLM import
+# Import shared LLM client from core
 import os
-llm_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "LLMStuff")
-sys.path.append(llm_path)
-from simple_llm_chat import LocalLLM
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.llm_client import LocalLLM
 
 try:
     import PyPDF2
@@ -134,7 +134,8 @@ class JobFinder:
     
     def _load_job_sources(self):
         """Load job sources from config file"""
-        config_file = Path(__file__).parent / 'job_sources.json'
+        # Job sources at project root
+        config_file = Path(__file__).parent.parent / 'job_sources.json'
         
         if not config_file.exists():
             print(f"⚠ Config file not found: {config_file}")
@@ -1842,8 +1843,8 @@ def main():
     
     args = parser.parse_args()
     
-    # Load configuration from config.yaml
-    config_path = Path(__file__).parent / 'config.yaml'
+    # Load configuration from config.yaml (at project root)
+    config_path = Path(__file__).parent.parent / 'config.yaml'
     if not config_path.exists():
         print("Error: config.yaml not found!")
         print("Please copy config.example.yaml to config.yaml and fill in your details.")
@@ -1859,12 +1860,15 @@ def main():
         'recipient': None  # Will be extracted from each resume
     }
     
+    # Project root is parent of job_finder folder
+    project_root = Path(__file__).parent.parent
+    
     # Determine which resumes to process
     resumes_to_process = []
     
     if args.auto:
         # Auto mode: process ALL resumes in Resumes folder
-        resumes_dir = Path(__file__).parent / config['paths']['resumes_dir']
+        resumes_dir = project_root / config['paths']['resumes_dir']
         if resumes_dir.exists():
             resumes_to_process = list(resumes_dir.glob("*.pdf"))
             print(f"\n{'='*60}")
@@ -1884,7 +1888,7 @@ def main():
     else:
         # Interactive mode
         print("\nAvailable resumes:")
-        resumes_dir = Path(__file__).parent / config['paths']['resumes_dir']
+        resumes_dir = project_root / config['paths']['resumes_dir']
         if resumes_dir.exists():
             resumes = list(resumes_dir.glob("*.pdf"))
             for i, resume in enumerate(resumes, 1):
@@ -1927,7 +1931,7 @@ def main():
         
         try:
             # Initialize job finder for this resume
-            db_path = Path(__file__).parent / config['paths']['database']
+            db_path = project_root / config['paths']['database']
             finder = JobFinder(str(resume_path), email_config, str(db_path))
             
             # Run job search

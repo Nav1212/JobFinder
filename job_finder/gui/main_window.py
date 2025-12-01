@@ -6,11 +6,12 @@ import sys
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from gui.config_tab import ConfigTab
-from gui.resumes_tab import ResumesTab
-from gui.sources_tab import SourcesTab
-from gui.run_tab import RunTab
+from job_finder.gui.config_tab import ConfigTab
+from job_finder.gui.resumes_tab import ResumesTab
+from job_finder.gui.sources_tab import SourcesTab
+from job_finder.gui.run_tab import RunTab
 
 
 class MainWindow:

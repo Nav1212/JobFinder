@@ -176,8 +176,8 @@ class RunTab:
             messagebox.showwarning("Already Running", "Bot is already running")
             return
         
-        # Validate config exists
-        config_path = Path(__file__).parent.parent / 'config.yaml'
+        # Validate config exists (at project root)
+        config_path = Path(__file__).parent.parent.parent / 'config.yaml'
         if not config_path.exists():
             messagebox.showerror(
                 "Config Missing",
