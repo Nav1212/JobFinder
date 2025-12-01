@@ -1,13 +1,13 @@
 """
 Import Review Tab - Three sub-tabs for reviewing PDF resume imports
 Categorization, Extraction Quality, and Impact Score views
-With non-blocking async re-scoring on edits
+With non-blocking async re-scoring on edits and RAG integration
 """
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-from typing import Callable, Optional
+from typing import Callable, Optional, List, Dict
 from pathlib import Path
 import sys
 
@@ -16,6 +16,28 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from resume_gen.pdf_parser import PDFParser, ParsedSentence, ReviewSession
 from resume_gen.user_manager import UserManager
+
+# RAG integration (lazy loaded)
+_rag_module = None
+
+def _get_rag_module():
+    """Lazy load RAG module"""
+    global _rag_module
+    if _rag_module is None:
+        try:
+            from core import resume_rag
+            _rag_module = resume_rag
+        except ImportError as e:
+            print(f"Warning: RAG module not available: {e}")
+            _rag_module = False
+    return _rag_module if _rag_module else None
+
+def _is_faiss_available() -> bool:
+    """Check if FAISS is available for RAG indexing"""
+    rag = _get_rag_module()
+    if rag:
+        return rag.is_faiss_available()
+    return False
 
 
 class LoadingSpinner(ttk.Frame):
@@ -66,6 +88,226 @@ class LoadingSpinner(ttk.Frame):
         self.spinner_idx = (self.spinner_idx + 1) % len(self.SPINNER_CHARS)
         self.spinner_label.config(text=self.SPINNER_CHARS[self.spinner_idx])
         self.after_id = self.after(100, self._animate)
+
+
+class ProfileExtractionDialog(tk.Toplevel):
+    """Dialog showing extracted profile info and allowing edits before import"""
+    
+    def __init__(self, parent, profile: Dict, filename: str):
+        super().__init__(parent)
+        
+        self.title("Profile Extracted from Resume")
+        self.geometry("500x450")
+        self.resizable(False, False)
+        
+        self.profile = profile
+        self.filename = filename
+        self.result = None  # Will be set to profile dict or None if cancelled
+        
+        self._create_widgets()
+        
+        # Modal
+        self.transient(parent)
+        self.grab_set()
+        
+    def _create_widgets(self):
+        """Create dialog layout"""
+        main_frame = ttk.Frame(self, padding="15")
+        main_frame.pack(fill='both', expand=True)
+        
+        # Header
+        ttk.Label(
+            main_frame, 
+            text="📋 Profile Information Extracted",
+            font=('Arial', 12, 'bold')
+        ).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(
+            main_frame,
+            text="Review and edit the information extracted from your resume.\nThe username will be used to identify you in the system.",
+            font=('Arial', 9),
+            foreground='gray'
+        ).pack(anchor='w', pady=(0, 15))
+        
+        # Form fields
+        form_frame = ttk.Frame(main_frame)
+        form_frame.pack(fill='x', pady=5)
+        
+        self.entries = {}
+        
+        fields = [
+            ("name", "Full Name:", self.profile.get("name", "")),
+            ("username", "Username:", self.profile.get("username", "")),
+            ("email", "Email:", self.profile.get("email", "")),
+            ("phone", "Phone:", self.profile.get("phone", "")),
+            ("location", "Location:", self.profile.get("location", "")),
+            ("linkedin", "LinkedIn:", self.profile.get("linkedin", "")),
+        ]
+        
+        for i, (key, label, value) in enumerate(fields):
+            ttk.Label(form_frame, text=label, width=12, anchor='e').grid(
+                row=i, column=0, sticky='e', pady=3, padx=(0, 5)
+            )
+            
+            entry = ttk.Entry(form_frame, width=45)
+            entry.insert(0, value)
+            entry.grid(row=i, column=1, sticky='w', pady=3)
+            self.entries[key] = entry
+        
+        # Education (read-only display)
+        ttk.Label(main_frame, text="Education (stored in profile, not indexed):").pack(
+            anchor='w', pady=(15, 5)
+        )
+        
+        edu_frame = ttk.Frame(main_frame)
+        edu_frame.pack(fill='x')
+        
+        education = self.profile.get("education", [])
+        if education:
+            for edu in education[:3]:  # Show max 3
+                if isinstance(edu, dict):
+                    edu_text = f"• {edu.get('degree', '')} - {edu.get('school', '')} ({edu.get('year', '')})"
+                else:
+                    edu_text = f"• {edu}"
+                ttk.Label(edu_frame, text=edu_text, font=('Arial', 9)).pack(anchor='w')
+        else:
+            ttk.Label(edu_frame, text="(No education found)", foreground='gray').pack(anchor='w')
+        
+        # Buttons
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill='x', pady=(20, 0))
+        
+        ttk.Button(btn_frame, text="❌ Cancel", command=self._cancel).pack(side='left')
+        ttk.Button(btn_frame, text="✅ Use This Profile", command=self._confirm).pack(side='right')
+    
+    def _cancel(self):
+        """Cancel and close dialog"""
+        self.result = None
+        self.destroy()
+    
+    def _confirm(self):
+        """Confirm and save profile"""
+        # Validate username
+        username = self.entries["username"].get().strip()
+        if not username:
+            messagebox.showwarning("Missing Username", "Please enter a username")
+            return
+        
+        # Build result profile
+        self.result = {
+            "name": self.entries["name"].get().strip(),
+            "username": username,
+            "email": self.entries["email"].get().strip(),
+            "phone": self.entries["phone"].get().strip(),
+            "location": self.entries["location"].get().strip(),
+            "linkedin": self.entries["linkedin"].get().strip(),
+            "education": self.profile.get("education", []),
+            "summary": self.profile.get("summary", ""),
+        }
+        self.destroy()
+
+
+class DuplicateWarningDialog(tk.Toplevel):
+    """Dialog warning about duplicate/similar sentences during merge"""
+    
+    def __init__(self, parent, duplicates: List[Dict]):
+        super().__init__(parent)
+        
+        self.title("⚠️ Similar Sentences Found")
+        self.geometry("700x500")
+        
+        self.duplicates = duplicates
+        self.action = "skip_all"  # Default action
+        
+        self._create_widgets()
+        
+        # Modal
+        self.transient(parent)
+        self.grab_set()
+    
+    def _create_widgets(self):
+        """Create dialog layout"""
+        main_frame = ttk.Frame(self, padding="15")
+        main_frame.pack(fill='both', expand=True)
+        
+        # Header
+        ttk.Label(
+            main_frame,
+            text=f"⚠️ Found {len(self.duplicates)} Similar Sentences",
+            font=('Arial', 12, 'bold')
+        ).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(
+            main_frame,
+            text="These sentences are similar to ones already in your library.\nAdding them may create redundant entries in your RAG index.",
+            font=('Arial', 9),
+            foreground='gray'
+        ).pack(anchor='w', pady=(0, 15))
+        
+        # Scrollable list of duplicates
+        list_frame = ttk.LabelFrame(main_frame, text="Similar Sentences", padding=5)
+        list_frame.pack(fill='both', expand=True, pady=10)
+        
+        # Create canvas for scrolling
+        canvas = tk.Canvas(list_frame, height=250)
+        scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=canvas.yview)
+        
+        scrollable = ttk.Frame(canvas)
+        scrollable.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        
+        canvas.create_window((0, 0), window=scrollable, anchor='nw')
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        # Display duplicates
+        for i, dup in enumerate(self.duplicates[:20]):  # Show max 20
+            dup_frame = ttk.Frame(scrollable)
+            dup_frame.pack(fill='x', pady=5, padx=5)
+            
+            ttk.Label(
+                dup_frame,
+                text=f"New: {dup['new_text'][:80]}...",
+                font=('Arial', 9),
+                wraplength=600
+            ).pack(anchor='w')
+            
+            ttk.Label(
+                dup_frame,
+                text=f"Similar to: {dup['similar_to'][:80]}... (Similarity: {dup['similarity']:.0%})",
+                font=('Arial', 9, 'italic'),
+                foreground='#666'
+            ).pack(anchor='w')
+            
+            ttk.Separator(dup_frame, orient='horizontal').pack(fill='x', pady=5)
+        
+        # Action buttons
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill='x', pady=(10, 0))
+        
+        ttk.Button(
+            btn_frame, 
+            text="Skip All Duplicates", 
+            command=lambda: self._set_action("skip_all")
+        ).pack(side='left', padx=5)
+        
+        ttk.Button(
+            btn_frame, 
+            text="Add Anyway", 
+            command=lambda: self._set_action("add_all")
+        ).pack(side='left', padx=5)
+        
+        ttk.Button(
+            btn_frame, 
+            text="Cancel Import", 
+            command=lambda: self._set_action("cancel")
+        ).pack(side='right', padx=5)
+    
+    def _set_action(self, action: str):
+        """Set action and close dialog"""
+        self.action = action
+        self.destroy()
 
 
 class SentenceCard(ttk.Frame):
@@ -387,7 +629,7 @@ class ImportReviewTab(ttk.Frame):
         self.sub_notebook.add(self.quality_tab['frame'], text="✨ Extraction Quality")
         self.sub_notebook.add(self.impact_tab['frame'], text="⚡ Impact Score")
         
-        # Bottom: Import button
+        # Bottom: Import button and Rebuild Index
         bottom_frame = ttk.Frame(self)
         bottom_frame.pack(fill='x', pady=(10, 0))
         
@@ -398,6 +640,15 @@ class ImportReviewTab(ttk.Frame):
             state='disabled'
         )
         self.import_btn.pack(side='right')
+        
+        # Rebuild Index button (for debugging)
+        self.rebuild_btn = ttk.Button(
+            bottom_frame,
+            text="🔄 Rebuild RAG Index",
+            command=self._rebuild_rag_index,
+            state='disabled'
+        )
+        self.rebuild_btn.pack(side='right', padx=(0, 10))
         
         self.stats_label = ttk.Label(bottom_frame, text="No sentences loaded")
         self.stats_label.pack(side='left')
@@ -526,6 +777,10 @@ class ImportReviewTab(ttk.Frame):
         
         # Enable import button
         self.import_btn.config(state='normal')
+        
+        # Enable rebuild button if user selected
+        if self.current_user:
+            self.rebuild_btn.config(state='normal')
         
         self.status_callback(f"Parsed {len(session.sentences)} sentences from PDF")
     
@@ -675,20 +930,96 @@ class ImportReviewTab(ttk.Frame):
             self.import_btn.config(state='disabled')
     
     def _import_to_library(self):
-        """Import all reviewed sentences to user's library"""
-        if not self.current_user:
-            messagebox.showwarning("No User", "Please select a user first")
-            return
-        
+        """Import all reviewed sentences to user's library with profile extraction and RAG"""
         if not self.review_session or not self.review_session.sentences:
             messagebox.showwarning("No Sentences", "No sentences to import")
             return
         
-        # Confirm import
+        filepath = self.file_path_var.get().strip()
+        filename = Path(filepath).name if filepath else "unknown.pdf"
+        
+        # Step 1: Extract profile from PDF (if no user selected yet)
+        if not self.current_user:
+            self.status_callback("Extracting profile from resume...")
+            profile = self.pdf_parser.extract_user_profile(text=self.review_session.raw_text)
+            
+            if profile.get("error"):
+                messagebox.showerror("Profile Extraction Failed", profile["error"])
+                return
+            
+            # Show profile dialog
+            dialog = ProfileExtractionDialog(self, profile, filename)
+            self.wait_window(dialog)
+            
+            if dialog.result is None:
+                self.status_callback("Import cancelled")
+                return
+            
+            profile = dialog.result
+            username = profile["username"]
+            
+            # Create user if doesn't exist
+            if not self.user_manager.user_exists(username):
+                self.user_manager.create_user(username, profile)
+                self.status_callback(f"Created new user: {username}")
+            else:
+                # Update existing user profile
+                self.user_manager.update_user_profile(username, profile)
+            
+            # Track resume filename
+            self.user_manager.add_resume_filename(username, filename)
+            
+            self.current_user = username
+        else:
+            # Track resume filename for existing user
+            self.user_manager.add_resume_filename(self.current_user, filename)
+        
+        # Step 2: Check for RAG duplicates (similar sentences)
+        rag = _get_rag_module()
+        rag_duplicates = []
+        
+        if rag:
+            try:
+                indexes_dir = str(Path(__file__).parent / "indexes")
+                idx = rag.UserRAGIndex(self.current_user, indexes_dir)
+                
+                if idx.exists():
+                    # Check each indexable sentence for similarity
+                    for sentence in self.review_session.sentences:
+                        category = sentence.user_category_override or sentence.category
+                        if category.lower() in ['skills', 'experience', 'achievements']:
+                            text = sentence.get_display_text()
+                            similar = idx.find_similar(text)
+                            if similar:
+                                rag_duplicates.append({
+                                    'new_text': text,
+                                    'similar_to': similar[0]['text'],
+                                    'similarity': similar[0]['score'],
+                                    'sentence': sentence
+                                })
+            except Exception as e:
+                print(f"RAG duplicate check error: {e}")
+        
+        # Show duplicate warning if found
+        skip_sentences = set()
+        if rag_duplicates:
+            dialog = DuplicateWarningDialog(self, rag_duplicates)
+            self.wait_window(dialog)
+            
+            if dialog.action == "cancel":
+                self.status_callback("Import cancelled")
+                return
+            elif dialog.action == "skip_all":
+                # Mark duplicate sentences to skip
+                for dup in rag_duplicates:
+                    skip_sentences.add(id(dup['sentence']))
+        
+        # Step 3: Import sentences
         count = len(self.review_session.sentences)
         if not messagebox.askyesno(
             "Confirm Import",
-            f"Import {count} sentences to {self.current_user}'s library?"
+            f"Import {count} sentences to {self.current_user}'s library?\n"
+            f"({len(skip_sentences)} similar sentences will be skipped)"
         ):
             return
         
@@ -696,11 +1027,16 @@ class ImportReviewTab(ttk.Frame):
         imported = 0
         duplicates = 0
         
-        # Get existing sentences for duplicate detection
+        # Get existing sentences for exact duplicate detection
         existing = self.user_manager.get_sentences_flat(self.current_user)
         existing_texts = {s['text'].lower().strip() for s in existing}
         
         for sentence in self.review_session.sentences:
+            # Skip RAG-similar sentences if user chose to
+            if id(sentence) in skip_sentences:
+                duplicates += 1
+                continue
+            
             text = sentence.get_display_text()
             
             # Skip duplicates
@@ -756,6 +1092,53 @@ class ImportReviewTab(ttk.Frame):
             for widget in tab_data['content'].winfo_children():
                 widget.destroy()
         self.sentence_cards.clear()
+    
+    def _rebuild_rag_index(self):
+        """Rebuild RAG index for current user (debugging tool)"""
+        if not self.current_user:
+            messagebox.showwarning("No User", "Please select a user first")
+            return
+        
+        # Check if FAISS is available
+        if not _is_faiss_available():
+            messagebox.showerror(
+                "FAISS Not Installed",
+                "FAISS is required for RAG indexing but is not installed.\n\n"
+                "Install it with:\n"
+                "  pip install faiss-cpu\n\n"
+                "Or for GPU support:\n"
+                "  pip install faiss-gpu"
+            )
+            return
+        
+        if not messagebox.askyesno(
+            "Rebuild RAG Index",
+            f"This will rebuild the RAG index for {self.current_user} from scratch.\n"
+            "This is useful if the index becomes corrupted or out of sync.\n\n"
+            "Continue?"
+        ):
+            return
+        
+        self.status_callback(f"Rebuilding RAG index for {self.current_user}...")
+        self.rebuild_btn.config(state='disabled')
+        
+        def do_rebuild():
+            count = self.user_manager.rebuild_rag_index(self.current_user)
+            self.after(0, lambda: self._on_rebuild_complete(count))
+        
+        thread = threading.Thread(target=do_rebuild, daemon=True)
+        thread.start()
+    
+    def _on_rebuild_complete(self, count: int):
+        """Handle rebuild completion"""
+        self.rebuild_btn.config(state='normal')
+        
+        if count < 0:
+            messagebox.showerror("Rebuild Failed", "Failed to rebuild RAG index. Check console for errors.")
+            self.status_callback("RAG index rebuild failed")
+        else:
+            messagebox.showinfo("Rebuild Complete", f"RAG index rebuilt with {count} sentences indexed.")
+            self.status_callback(f"RAG index rebuilt: {count} sentences")
 
 
 # Quick test

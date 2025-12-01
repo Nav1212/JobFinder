@@ -43,6 +43,22 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.llm_client import LocalLLM
 
+# RAG integration (lazy loaded)
+_rag_module = None
+_rag_warning_shown = False
+
+def _get_rag_module():
+    """Lazy load RAG module"""
+    global _rag_module
+    if _rag_module is None:
+        try:
+            from core import resume_rag
+            _rag_module = resume_rag
+        except ImportError as e:
+            print(f"Warning: RAG module not available: {e}")
+            _rag_module = False
+    return _rag_module if _rag_module else None
+
 try:
     import PyPDF2
 except ImportError:
@@ -123,6 +139,10 @@ class JobFinder:
         # Load job sources from config file
         self.job_sources = self._load_job_sources()
         
+        # Initialize RAG index for this resume (if available)
+        self.rag_index = None
+        self._init_rag_index(resume_path)
+        
         # North America location keywords for filtering
         self.north_america_keywords = [
             'canada', 'canadian', 'ontario', 'quebec', 'british columbia', 'alberta', 'toronto', 'vancouver', 'montreal', 'calgary', 'ottawa',
@@ -155,6 +175,43 @@ class JobFinder:
         except Exception as e:
             print(f"⚠ Error loading job sources config: {e}")
             return {'api_sources': [], 'playwright_sources': [], 'scraping_sources': []}
+    
+    def _init_rag_index(self, resume_path):
+        """Initialize RAG index for resume-based semantic matching"""
+        global _rag_warning_shown
+        
+        rag = _get_rag_module()
+        if not rag:
+            return
+        
+        try:
+            # Try to find user by resume filename
+            resume_filename = Path(resume_path).name
+            indexes_dir = str(Path(__file__).parent.parent / 'resume_gen' / 'indexes')
+            
+            # Look up username from filename
+            username = rag.get_username_from_filename(resume_filename, indexes_dir)
+            
+            if username:
+                idx = rag.UserRAGIndex(username, indexes_dir)
+                if idx.exists():
+                    self.rag_index = idx
+                    stats = idx.get_stats()
+                    print(f"✓ RAG index loaded for {username}: {stats['total_sentences']} sentences")
+                else:
+                    if not _rag_warning_shown:
+                        print(f"⚠ RAG index not found for {username}.")
+                        print("  To create one: Open Resume Generator GUI → Import tab → Parse & import your resume")
+                        _rag_warning_shown = True
+            else:
+                if not _rag_warning_shown:
+                    print(f"⚠ Resume '{resume_filename}' not linked to any user profile.")
+                    print("  To set up RAG matching: Open Resume Generator GUI → Import your resume")
+                    print("  Falling back to simple text truncation for job matching.")
+                    _rag_warning_shown = True
+                    
+        except Exception as e:
+            print(f"⚠ Error loading RAG index: {e}")
         
     def extract_email_from_resume(self):
         """Extract email address from resume text using regex"""
@@ -1217,7 +1274,11 @@ class JobFinder:
             await asyncio.gather(*tasks, return_exceptions=True)
     
     def analyze_job_match(self, job):
-        """Use LLM to analyze job match and extract details (Unified Prompt)"""
+        """Use LLM to analyze job match and extract details (Unified Prompt)
+        
+        Uses RAG to retrieve relevant resume sections if available,
+        otherwise falls back to simple text truncation.
+        """
         if not self.llm or not self.resume_text:
             return {
                 'match_score': 0, 
@@ -1228,10 +1289,13 @@ class JobFinder:
                 'is_remote': False
             }
         
+        # Get resume context - use RAG if available, otherwise truncate
+        resume_context = self._get_resume_context_for_job(job)
+        
         prompt = f"""
 Analyze this job for a candidate.
 
-RESUME: {self.resume_text[:3000]}
+RESUME: {resume_context}
 
 JOB:
 Title: {job['title']}
@@ -1382,6 +1446,66 @@ Return JSON ONLY:
                 'location': job.get('location', ''), 
                 'is_remote': False
             }
+    
+    def _get_resume_context_for_job(self, job):
+        """
+        Get relevant resume context for a job using RAG if available.
+        
+        Uses semantic search to find the most relevant resume sentences
+        for the job description. Falls back to simple truncation if RAG
+        is not available.
+        
+        Returns:
+            str: Resume context (max ~3000 chars)
+        """
+        # Try RAG retrieval first
+        if self.rag_index:
+            try:
+                # Build query from job title and key parts of description
+                query = f"{job['title']} {job['description'][:1000]}"
+                
+                # Retrieve top relevant sentences
+                results = self.rag_index.retrieve(query, top_k=10)
+                
+                if results:
+                    # Build context from retrieved sentences
+                    context_parts = []
+                    total_chars = 0
+                    max_chars = 2500  # Leave room for profile info
+                    
+                    for result in results:
+                        text = result['text']
+                        if total_chars + len(text) < max_chars:
+                            context_parts.append(f"• {text}")
+                            total_chars += len(text) + 2
+                    
+                    # Add profile info (education, etc.) if available
+                    profile = self.rag_index.profile
+                    if profile:
+                        profile_parts = []
+                        if profile.get('education'):
+                            edu = profile['education']
+                            if isinstance(edu, list) and edu:
+                                edu_str = "; ".join([
+                                    f"{e.get('degree', '')} from {e.get('school', '')}" 
+                                    for e in edu[:2] if isinstance(e, dict)
+                                ])
+                                if edu_str:
+                                    profile_parts.append(f"Education: {edu_str}")
+                        if profile.get('summary'):
+                            profile_parts.append(f"Summary: {profile['summary'][:200]}")
+                        
+                        if profile_parts:
+                            context_parts.insert(0, "\n".join(profile_parts))
+                    
+                    if context_parts:
+                        return "\n".join(context_parts)
+                    
+            except Exception as e:
+                print(f"    RAG retrieval error: {e}, falling back to truncation")
+        
+        # Fallback: simple text truncation
+        return self.resume_text[:3000]
     
     def _basic_match_analysis(self, job):
         """Fallback basic keyword matching if LLM fails"""

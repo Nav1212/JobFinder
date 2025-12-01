@@ -4,9 +4,27 @@ Stores all users in a single JSON file with isolated sentence libraries
 """
 
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, List, Any
+
+# RAG integration (lazy loaded to avoid circular imports)
+_rag_module = None
+
+def _get_rag_module():
+    """Lazy load RAG module to avoid circular imports"""
+    global _rag_module
+    if _rag_module is None:
+        try:
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from core import resume_rag
+            _rag_module = resume_rag
+        except ImportError as e:
+            print(f"Warning: RAG module not available: {e}")
+            _rag_module = False
+    return _rag_module if _rag_module else None
 
 
 class UserManager:
@@ -62,6 +80,7 @@ class UserManager:
                 "email": "",
                 "created": datetime.now().isoformat()
             },
+            "resume_filenames": [],  # List of resume files for this user
             "sentences": {
                 "skills": {},
                 "experience": {},
@@ -88,7 +107,22 @@ class UserManager:
         data = self._load_data()
         data["users"][username]["profile"].update(profile)
         self._save_data(data)
+        
+        # Update RAG index profile (non-indexed data like education)
+        rag = _get_rag_module()
+        if rag:
+            try:
+                idx = rag.UserRAGIndex(username, self._get_indexes_dir())
+                if idx.exists():
+                    idx.update_profile(profile)
+            except Exception as e:
+                print(f"Warning: Failed to update RAG profile for {username}: {e}")
+        
         return True
+    
+    def _get_indexes_dir(self) -> str:
+        """Get RAG indexes directory path"""
+        return str(Path(__file__).parent / "indexes")
     
     def delete_user(self, username: str) -> bool:
         """Delete user and all their data"""
@@ -98,6 +132,19 @@ class UserManager:
         data = self._load_data()
         del data["users"][username]
         self._save_data(data)
+        
+        # TODO: Auto-delete orphaned RAG index when user is deleted
+        # This prevents stale indexes from accumulating and saves disk space
+        rag = _get_rag_module()
+        if rag:
+            try:
+                idx = rag.UserRAGIndex(username, self._get_indexes_dir())
+                if idx.exists():
+                    idx.delete()
+                    print(f"✓ Deleted RAG index for {username}")
+            except Exception as e:
+                print(f"Warning: Failed to delete RAG index for {username}: {e}")
+        
         return True
     
     # ==================== Sentence Operations ====================
@@ -188,6 +235,25 @@ class UserManager:
             return False
         
         self._save_data(data)
+        
+        # Update RAG index if sentence is in indexable sections
+        if sentence_type in ["skills", "experience", "achievements"]:
+            rag = _get_rag_module()
+            if rag:
+                try:
+                    idx = rag.UserRAGIndex(username, self._get_indexes_dir())
+                    if idx.exists():
+                        # Add single sentence to existing index
+                        added, duplicates = idx.add_sentences(
+                            [{"text": text}], 
+                            section=sentence_type, 
+                            category=category
+                        )
+                        if duplicates:
+                            print(f"⚠ Similar sentence already exists: {duplicates[0]['similar_to'][:50]}...")
+                except Exception as e:
+                    print(f"Warning: Failed to update RAG index: {e}")
+        
         return True
     
     def remove_sentence(self, username: str, sentence_type: str, text: str,
@@ -230,6 +296,88 @@ class UserManager:
         for item in flat:
             tags.update(item.get("tags", []))
         return sorted(tags)
+    
+    # ==================== Resume Filename Operations ====================
+    
+    def add_resume_filename(self, username: str, filename: str) -> bool:
+        """Add a resume filename to user's tracked files"""
+        if not self.user_exists(username):
+            return False
+        
+        data = self._load_data()
+        user = data["users"][username]
+        
+        # Ensure resume_filenames list exists (for older data)
+        if "resume_filenames" not in user:
+            user["resume_filenames"] = []
+        
+        if filename not in user["resume_filenames"]:
+            user["resume_filenames"].append(filename)
+            self._save_data(data)
+            
+            # Also update RAG index filename list
+            rag = _get_rag_module()
+            if rag:
+                try:
+                    idx = rag.UserRAGIndex(username, self._get_indexes_dir())
+                    if idx.exists():
+                        idx.add_resume_filename(filename)
+                except Exception as e:
+                    print(f"Warning: Failed to update RAG filenames: {e}")
+        
+        return True
+    
+    def get_resume_filenames(self, username: str) -> List[str]:
+        """Get list of resume filenames for a user"""
+        user = self.get_user(username)
+        if not user:
+            return []
+        return user.get("resume_filenames", [])
+    
+    def get_username_by_filename(self, filename: str) -> Optional[str]:
+        """Look up username from resume filename"""
+        data = self._load_data()
+        for username, user_data in data.get("users", {}).items():
+            if filename in user_data.get("resume_filenames", []):
+                return username
+        return None
+    
+    # ==================== RAG Index Operations ====================
+    
+    def rebuild_rag_index(self, username: str) -> int:
+        """Rebuild RAG index from current sentence library (for debugging)"""
+        if not self.user_exists(username):
+            return -1
+        
+        rag = _get_rag_module()
+        if not rag:
+            print("RAG module not available")
+            return -1
+        
+        try:
+            sentences = self.get_all_sentences(username)
+            idx = rag.UserRAGIndex(username, self._get_indexes_dir())
+            count = idx.rebuild_from_sentences(sentences)
+            print(f"✓ Rebuilt RAG index for {username}: {count} sentences indexed")
+            return count
+        except Exception as e:
+            print(f"Failed to rebuild RAG index: {e}")
+            return -1
+    
+    def get_rag_index_stats(self, username: str) -> Optional[Dict]:
+        """Get RAG index statistics for a user"""
+        rag = _get_rag_module()
+        if not rag:
+            return None
+        
+        try:
+            idx = rag.UserRAGIndex(username, self._get_indexes_dir())
+            if idx.exists():
+                return idx.get_stats()
+            return None
+        except Exception as e:
+            print(f"Failed to get RAG stats: {e}")
+            return None
 
 
 # Quick test

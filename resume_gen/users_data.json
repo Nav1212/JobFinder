@@ -4,5 +4,23 @@
     "created": "2025-11-29",
     "description": "Multi-user resume sentence library for hybrid TF-IDF matching"
   },
-  "users": {}
+  "users": {
+    "navid": {
+      "profile": {
+        "name": "navid",
+        "email": "nav.sarshar@gmail.com",
+        "created": "2025-11-30T23:04:53.761008"
+      },
+      "resume_filenames": [],
+      "sentences": {
+        "skills": {},
+        "experience": {},
+        "achievements": [],
+        "education": [],
+        "certifications": [],
+        "projects": []
+      },
+      "templates": {}
+    }
+  }
 }

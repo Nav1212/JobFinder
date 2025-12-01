@@ -1,5 +1,6 @@
 # Job Finder Bot Configuration
 # Copy this file to config.yaml and fill in your details
+# TODO: Create GUI to edit config or add settings tab to existing interface
 
 email:
   sender: "your-email@gmail.com"
@@ -9,3 +10,10 @@ paths:
   resumes_dir: "../Resumes"  # Path to folder containing resume PDFs
   database: "../jobs_database.db"  # Database location (outside repo)
   logs_dir: "../JobFinderBot_Logs"  # Logs directory (outside repo)
+  rag_indexes_dir: "resume_gen/indexes"  # Per-user RAG index storage
+
+# RAG (Retrieval-Augmented Generation) settings for resume matching
+rag:
+  embedding_model: "mxbai-embed-large"  # Ollama embedding model (1024 dims)
+  similarity_threshold: 0.85  # Threshold for duplicate detection (0.0-1.0)
+  top_k: 10  # Number of similar sentences to retrieve for job matching

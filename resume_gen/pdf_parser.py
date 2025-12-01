@@ -172,16 +172,43 @@ class PDFParser:
         }
         
         try:
-            response = requests.post(url, json=data, timeout=60)
+            print(f"  [LLM] Calling {self.llm_model} with {len(prompt)} char prompt...")
+            response = requests.post(url, json=data, timeout=120)  # Increased timeout
+            
+            # Check HTTP status
+            if response.status_code != 200:
+                error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+                print(f"  [LLM] ERROR: {error_msg}")
+                return f"LLM_ERROR: {error_msg}"
+            
             result = response.json()
-            return result.get('response', '')
+            
+            # Check for error in response
+            if 'error' in result:
+                error_msg = result['error']
+                print(f"  [LLM] ERROR from Ollama: {error_msg}")
+                return f"LLM_ERROR: {error_msg}"
+            
+            llm_response = result.get('response', '')
+            print(f"  [LLM] Got {len(llm_response)} char response")
+            return llm_response
+            
+        except requests.exceptions.Timeout:
+            print(f"  [LLM] ERROR: Request timed out after 120s")
+            return "LLM_ERROR: Request timed out - model may be overloaded"
+        except requests.exceptions.ConnectionError as e:
+            print(f"  [LLM] ERROR: Connection failed - {e}")
+            return f"LLM_ERROR: Connection refused - is Ollama running? (ollama serve)"
         except Exception as e:
-            return f"LLM_ERROR: {str(e)}"
+            print(f"  [LLM] ERROR: {type(e).__name__}: {e}")
+            return f"LLM_ERROR: {type(e).__name__}: {str(e)}"
     
     def _analyze_sentence_batch(self, sentences: List[str]) -> List[Dict]:
         """Analyze a batch of sentences with single LLM call"""
         if not sentences:
             return []
+        
+        print(f"  [BATCH] Analyzing {len(sentences)} sentences...")
         
         # Build prompt for batch analysis
         prompt = """You are analyzing resume bullet points. For each sentence, provide:
@@ -205,14 +232,27 @@ Sentences to analyze:
         
         response = self._call_llm(prompt)
         
+        # Check for LLM errors
+        if response.startswith("LLM_ERROR:"):
+            print(f"  [BATCH] LLM call failed: {response}")
+            return []
+        
         # Parse JSON response
         try:
             # Try to find JSON in response
             json_match = re.search(r'\[.*\]', response, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group())
-            return []
-        except json.JSONDecodeError:
+                json_str = json_match.group()
+                parsed = json.loads(json_str)
+                print(f"  [BATCH] Successfully parsed {len(parsed)} results")
+                return parsed
+            else:
+                print(f"  [BATCH] No JSON array found in response")
+                print(f"  [BATCH] Response preview: {response[:500]}...")
+                return []
+        except json.JSONDecodeError as e:
+            print(f"  [BATCH] JSON parse error: {e}")
+            print(f"  [BATCH] Response preview: {response[:500]}...")
             return []
     
     def _analyze_single_sentence(self, sentence: str) -> Dict:
@@ -284,8 +324,34 @@ Return ONLY valid JSON, no other text:"""
             
             analyses = self._analyze_sentence_batch(batch)
             
-            # If LLM failed, create default entries
+            # If LLM failed or returned wrong count, create default entries
             if len(analyses) != len(batch):
+                print(f"  [FALLBACK] Expected {len(batch)} results, got {len(analyses)}")
+                
+                # Determine the specific error
+                if len(analyses) == 0:
+                    # Complete failure - test connection
+                    error_msg = "LLM returned no results"
+                    test_response = self._call_llm("Say OK")
+                    if "LLM_ERROR" in test_response:
+                        if "Connection refused" in test_response or "connect" in test_response.lower():
+                            error_msg = "Ollama not running - start with: ollama serve"
+                        elif "404" in test_response or "not found" in test_response.lower():
+                            error_msg = f"Model '{self.llm_model}' not found - run: ollama pull {self.llm_model}"
+                        elif "timeout" in test_response.lower():
+                            error_msg = "LLM request timed out - try smaller batch or wait"
+                        else:
+                            error_msg = test_response.replace('LLM_ERROR: ', '')
+                    else:
+                        # LLM works but didn't return valid JSON
+                        error_msg = "LLM response was not valid JSON - model may be struggling with batch size"
+                else:
+                    # Partial results - count mismatch
+                    error_msg = f"LLM returned {len(analyses)}/{len(batch)} results - some sentences may be too long"
+                
+                print(f"  [FALLBACK] Error: {error_msg}")
+                
+                # Fill in missing analyses with defaults
                 analyses = []
                 for sentence in batch:
                     analyses.append({
@@ -296,7 +362,7 @@ Return ONLY valid JSON, no other text:"""
                         "extraction_quality": 80,
                         "impact_score": 50,
                         "impact_suggestion": "",
-                        "extraction_issues": ["LLM analysis unavailable"]
+                        "extraction_issues": [error_msg]
                     })
             
             all_analyses.extend(analyses)
@@ -351,6 +417,87 @@ Return ONLY valid JSON, no other text:"""
         sentence.extraction_issues = analysis.get("extraction_issues", []) if isinstance(analysis.get("extraction_issues"), list) else []
         
         return sentence
+    
+    def extract_user_profile(self, pdf_path: str = None, text: str = None) -> Dict:
+        """
+        Extract user profile information from resume.
+        Used to auto-populate user data and derive username.
+        
+        Args:
+            pdf_path: Path to PDF file (will extract text)
+            text: Pre-extracted text (optional, skips PDF extraction)
+            
+        Returns:
+            Dict with profile fields:
+            - name: Full name (e.g., "John Doe")
+            - username: Derived username (e.g., "john_doe")
+            - email: Email address if found
+            - phone: Phone number if found
+            - location: City/State/Country if found
+            - linkedin: LinkedIn URL if found
+            - education: List of education entries (NOT indexed in RAG)
+            - summary: Professional summary if found
+        """
+        # Extract text if not provided
+        if text is None:
+            if pdf_path is None:
+                return {"error": "No PDF path or text provided"}
+            text, errors = self.extract_text_from_pdf(pdf_path)
+            if not text:
+                return {"error": f"Failed to extract text: {errors}"}
+        
+        # Use LLM to extract profile information
+        prompt = f"""Extract user profile information from this resume text.
+
+Resume text:
+{text[:5000]}
+
+Return a JSON object with these fields:
+- name: The person's full name (REQUIRED)
+- email: Email address if found (or empty string)
+- phone: Phone number if found (or empty string)
+- location: City, State/Province, Country if found (or empty string)
+- linkedin: LinkedIn URL if found (or empty string)
+- education: Array of education entries, each with "degree", "school", "year" (or empty array)
+- summary: Professional summary/objective if found (or empty string)
+
+Return ONLY valid JSON, no other text:"""
+        
+        response = self._call_llm(prompt)
+        
+        try:
+            # Try to find JSON in response
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                profile = json.loads(json_match.group())
+                
+                # Derive username from name
+                name = profile.get("name", "").strip()
+                if name:
+                    # Convert "John Doe" -> "john_doe"
+                    username = re.sub(r'[^a-zA-Z0-9\s]', '', name.lower())
+                    username = re.sub(r'\s+', '_', username.strip())
+                    profile["username"] = username
+                else:
+                    profile["username"] = ""
+                
+                # Ensure all expected fields exist
+                profile.setdefault("name", "")
+                profile.setdefault("email", "")
+                profile.setdefault("phone", "")
+                profile.setdefault("location", "")
+                profile.setdefault("linkedin", "")
+                profile.setdefault("education", [])
+                profile.setdefault("summary", "")
+                
+                return profile
+            
+            return {"error": "LLM did not return valid JSON"}
+        
+        except json.JSONDecodeError as e:
+            return {"error": f"JSON parse error: {e}"}
+        except Exception as e:
+            return {"error": f"Profile extraction error: {e}"}
 
 
 # Quick test

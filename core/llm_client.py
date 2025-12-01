@@ -5,7 +5,8 @@ Uses Ollama API to interact with local language models
 
 import requests
 import json
-from typing import Optional, List, Dict, Any
+import numpy as np
+from typing import Optional, List, Dict, Any, Union
 
 
 class LocalLLM:
@@ -100,6 +101,58 @@ class LocalLLM:
         
         except Exception as e:
             return f"LLM_ERROR: {str(e)}"
+    
+    def embed(self, texts: Union[str, List[str]], 
+              model: str = "mxbai-embed-large",
+              timeout: int = 60) -> np.ndarray:
+        """
+        Generate embeddings for text(s) using Ollama embeddings API.
+        
+        Args:
+            texts: Single text string or list of texts to embed
+            model: Embedding model to use (default: mxbai-embed-large, 1024 dims)
+            timeout: Request timeout in seconds
+            
+        Returns:
+            numpy array of shape (n_texts, embedding_dim) or (embedding_dim,) for single text
+        """
+        url = f"{self.base_url}/api/embeddings"
+        
+        # Handle single text vs list
+        single_input = isinstance(texts, str)
+        if single_input:
+            texts = [texts]
+        
+        embeddings = []
+        
+        try:
+            for text in texts:
+                data = {
+                    "model": model,
+                    "prompt": text
+                }
+                response = requests.post(url, json=data, timeout=timeout)
+                response.raise_for_status()
+                result = response.json()
+                
+                embedding = result.get('embedding', [])
+                if not embedding:
+                    raise ValueError(f"No embedding returned for text: {text[:50]}...")
+                
+                embeddings.append(embedding)
+            
+            # Convert to numpy array
+            embeddings_array = np.array(embeddings, dtype=np.float32)
+            
+            # Return single vector if single input, else 2D array
+            if single_input:
+                return embeddings_array[0]
+            return embeddings_array
+            
+        except requests.exceptions.RequestException as e:
+            raise ConnectionError(f"Failed to connect to Ollama for embeddings: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Embedding error: {e}")
     
     def list_models(self) -> List[str]:
         """List available models"""
