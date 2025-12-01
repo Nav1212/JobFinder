@@ -11,7 +11,7 @@
     {
       "name": "Google Jobs API",
       "url": "https://serpapi.com/search.json?engine=google_jobs",
-      "enabled": false,
+      "enabled": true,
       "type": "api",
       "parser": "google_jobs_api",
       "description": "Google Jobs via SerpAPI (requires API key)"
@@ -104,7 +104,9 @@
       "enabled": false,
       "type": "playwright",
       "parser": "indeed",
-      "countries": ["ca"],
+      "countries": [
+        "ca"
+      ],
       "description": "Major job board (DISABLED - Cloudflare blocked)"
     },
     {
@@ -113,7 +115,9 @@
       "enabled": false,
       "type": "playwright",
       "parser": "indeed",
-      "countries": ["us"],
+      "countries": [
+        "us"
+      ],
       "description": "Major job board (DISABLED - Cloudflare blocked)"
     },
     {
@@ -148,7 +152,12 @@
       "enabled": true,
       "type": "scraping",
       "parser": "dice",
-      "keywords": ["engineer", "developer", "data", "software"],
+      "keywords": [
+        "engineer",
+        "developer",
+        "data",
+        "software"
+      ],
       "description": "Tech-focused job board"
     },
     {
