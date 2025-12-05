@@ -142,13 +142,16 @@ class HybridMatcher:
         return results[:top_k]
     
     def match_by_type(self, job_description: str, sentence_type: str, 
-                      top_k: int = 5) -> List[Tuple[Dict, float]]:
+                      top_k: int = 5) -> List[Tuple[Dict, float, str]]:
         """Match only sentences of a specific type
         
         Args:
             job_description: Job posting text
             sentence_type: 'skill', 'experience', 'achievements', etc.
             top_k: Number of results to return
+            
+        Returns:
+            List of (sentence_dict, score, match_type) tuples with full metadata
         """
         # Filter sentences by type
         type_sentences = [s for s in self.sentences if s.get("type") == sentence_type]
@@ -159,11 +162,8 @@ class HybridMatcher:
         # Create temporary matcher for this type
         temp_matcher = HybridMatcher(type_sentences)
         
-        # Get matches
-        matches = temp_matcher.hybrid_match(job_description, top_k=top_k)
-        
-        # Return without match_type for simpler API
-        return [(m[0], m[1]) for m in matches]
+        # Return full tuples with match_type for key elements display
+        return temp_matcher.hybrid_match(job_description, top_k=top_k)
 
 
 # Quick test

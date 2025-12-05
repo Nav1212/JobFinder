@@ -1,6 +1,6 @@
 # Job Finder Bot Configuration
 # Copy this file to config.yaml and fill in your details
-# TODO: Create GUI to edit config or add settings tab to existing interface
+# Settings can also be edited via the GUI Settings tab
 
 email:
   sender: "your-email@gmail.com"

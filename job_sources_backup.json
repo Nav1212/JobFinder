@@ -1,21 +1,4 @@
-{
-  "categories": {
-    "main": {
-      "name": "Main Job Sites",
-      "description": "Primary job boards - LinkedIn, Dice, and APIs",
-      "user_editable": false
-    },
-    "company_specific": {
-      "name": "Company Careers",
-      "description": "Direct career pages from major tech companies",
-      "user_editable": true
-    },
-    "startups": {
-      "name": "Startup Jobs",
-      "description": "Startup-focused job boards and platforms",
-      "user_editable": true
-    }
-  },
+﻿{
   "api_sources": [
     {
       "name": "Arbeitnow",
@@ -23,7 +6,6 @@
       "enabled": true,
       "type": "api",
       "parser": "arbeitnow",
-      "category": "main",
       "description": "Remote and international jobs"
     },
     {
@@ -32,7 +14,6 @@
       "enabled": true,
       "type": "api",
       "parser": "google_jobs_api",
-      "category": "main",
       "description": "Google Jobs via SerpAPI (requires API key)"
     },
     {
@@ -41,7 +22,6 @@
       "enabled": true,
       "type": "api",
       "parser": "microsoft_api",
-      "category": "company_specific",
       "description": "Microsoft job search API"
     },
     {
@@ -50,7 +30,6 @@
       "enabled": false,
       "type": "api",
       "parser": "microsoft_graph",
-      "category": "company_specific",
       "description": "Microsoft jobs via Graph API (requires OAuth token)"
     },
     {
@@ -59,7 +38,6 @@
       "enabled": false,
       "type": "api",
       "parser": "remotive",
-      "category": "main",
       "description": "Remote jobs (DISABLED - recursion error)"
     },
     {
@@ -68,7 +46,6 @@
       "enabled": false,
       "type": "api",
       "parser": "remoteok",
-      "category": "main",
       "description": "Remote jobs (DISABLED - recursion error)"
     },
     {
@@ -77,7 +54,6 @@
       "enabled": false,
       "type": "api",
       "parser": "jsearch",
-      "category": "main",
       "description": "Job search aggregator (requires RapidAPI key)"
     },
     {
@@ -86,7 +62,6 @@
       "enabled": false,
       "type": "api",
       "parser": "adzuna",
-      "category": "main",
       "description": "Job aggregator (requires API key, free tier available)"
     }
   ],
@@ -97,7 +72,6 @@
       "enabled": true,
       "type": "playwright",
       "parser": "linkedin",
-      "category": "main",
       "description": "Professional networking site with extensive job listings"
     },
     {
@@ -106,7 +80,6 @@
       "enabled": true,
       "type": "playwright",
       "parser": "google",
-      "category": "company_specific",
       "description": "Google job listings"
     },
     {
@@ -115,7 +88,6 @@
       "enabled": false,
       "type": "playwright",
       "parser": "microsoft",
-      "category": "company_specific",
       "description": "Microsoft job listings (DISABLED - using API instead)"
     },
     {
@@ -124,35 +96,7 @@
       "enabled": true,
       "type": "playwright",
       "parser": "amazon",
-      "category": "company_specific",
       "description": "Amazon job listings"
-    },
-    {
-      "name": "Meta Careers",
-      "url": "https://www.metacareers.com/jobs",
-      "enabled": false,
-      "type": "playwright",
-      "parser": "meta",
-      "category": "company_specific",
-      "description": "Meta/Facebook job listings (requires parser)"
-    },
-    {
-      "name": "Apple Jobs",
-      "url": "https://jobs.apple.com/en-us/search",
-      "enabled": false,
-      "type": "playwright",
-      "parser": "apple",
-      "category": "company_specific",
-      "description": "Apple job listings (requires parser)"
-    },
-    {
-      "name": "Netflix Jobs",
-      "url": "https://jobs.netflix.com/search",
-      "enabled": false,
-      "type": "playwright",
-      "parser": "netflix",
-      "category": "company_specific",
-      "description": "Netflix job listings (requires parser)"
     },
     {
       "name": "Indeed CA",
@@ -160,8 +104,9 @@
       "enabled": false,
       "type": "playwright",
       "parser": "indeed",
-      "category": "main",
-      "countries": ["ca"],
+      "countries": [
+        "ca"
+      ],
       "description": "Major job board (DISABLED - Cloudflare blocked)"
     },
     {
@@ -170,8 +115,9 @@
       "enabled": false,
       "type": "playwright",
       "parser": "indeed",
-      "category": "main",
-      "countries": ["us"],
+      "countries": [
+        "us"
+      ],
       "description": "Major job board (DISABLED - Cloudflare blocked)"
     },
     {
@@ -180,7 +126,6 @@
       "enabled": false,
       "type": "playwright",
       "parser": "glassdoor",
-      "category": "main",
       "description": "Job listings with company reviews (DISABLED - wrong selectors)"
     },
     {
@@ -189,7 +134,6 @@
       "enabled": false,
       "type": "playwright",
       "parser": "ziprecruiter",
-      "category": "main",
       "description": "Job aggregator (requires parser implementation)"
     },
     {
@@ -198,7 +142,6 @@
       "enabled": false,
       "type": "playwright",
       "parser": "monster",
-      "category": "main",
       "description": "Job board (requires parser implementation)"
     }
   ],
@@ -209,8 +152,12 @@
       "enabled": true,
       "type": "scraping",
       "parser": "dice",
-      "category": "main",
-      "keywords": ["engineer", "developer", "data", "software"],
+      "keywords": [
+        "engineer",
+        "developer",
+        "data",
+        "software"
+      ],
       "description": "Tech-focused job board"
     },
     {
@@ -219,7 +166,6 @@
       "enabled": false,
       "type": "scraping",
       "parser": "google_api",
-      "category": "company_specific",
       "description": "Google careers API endpoint (requires parser implementation)"
     },
     {
@@ -228,7 +174,6 @@
       "enabled": false,
       "type": "scraping",
       "parser": "microsoft_feed",
-      "category": "company_specific",
       "description": "Microsoft job feed (requires parser implementation)"
     },
     {
@@ -237,44 +182,7 @@
       "enabled": false,
       "type": "scraping",
       "parser": "amazon_rss",
-      "category": "company_specific",
       "description": "Amazon jobs RSS feed (requires parser implementation)"
-    },
-    {
-      "name": "Wellfound",
-      "url": "https://wellfound.com/jobs",
-      "enabled": false,
-      "type": "scraping",
-      "parser": "wellfound",
-      "category": "startups",
-      "description": "Startup jobs, formerly AngelList (requires custom parser)"
-    },
-    {
-      "name": "Y Combinator Jobs",
-      "url": "https://www.workatastartup.com/jobs",
-      "enabled": false,
-      "type": "scraping",
-      "parser": "ycombinator",
-      "category": "startups",
-      "description": "Y Combinator startup job board (requires parser)"
-    },
-    {
-      "name": "Startup Jobs",
-      "url": "https://startup.jobs",
-      "enabled": false,
-      "type": "scraping",
-      "parser": "startupjobs",
-      "category": "startups",
-      "description": "Curated startup job listings (requires parser)"
-    },
-    {
-      "name": "We Work Remotely",
-      "url": "https://weworkremotely.com/remote-jobs/search",
-      "enabled": false,
-      "type": "scraping",
-      "parser": "weworkremotely",
-      "category": "startups",
-      "description": "Remote jobs including startups (requires parser)"
     },
     {
       "name": "Stack Overflow Jobs",
@@ -282,8 +190,31 @@
       "enabled": false,
       "type": "scraping",
       "parser": "stackoverflow",
-      "category": "main",
       "description": "Developer jobs (requires custom parser)"
+    },
+    {
+      "name": "AngelList",
+      "url": "https://angel.co/jobs",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "angellist",
+      "description": "Startup jobs (requires custom parser)"
+    },
+    {
+      "name": "We Work Remotely",
+      "url": "https://weworkremotely.com/remote-jobs/search",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "weworkremotely",
+      "description": "Remote jobs (requires custom parser)"
+    },
+    {
+      "name": "Wellfound",
+      "url": "https://wellfound.com/jobs",
+      "enabled": false,
+      "type": "scraping",
+      "parser": "wellfound",
+      "description": "Startup jobs, formerly AngelList (requires custom parser)"
     },
     {
       "name": "SimplyHired",
@@ -291,7 +222,6 @@
       "enabled": false,
       "type": "scraping",
       "parser": "simplyhired",
-      "category": "main",
       "description": "Job aggregator (requires custom parser)"
     },
     {
@@ -300,17 +230,14 @@
       "enabled": false,
       "type": "scraping",
       "parser": "careerbuilder",
-      "category": "main",
       "description": "Job board (requires custom parser)"
     }
   ],
   "notes": {
-    "categories": "Sources are organized into 3 categories: main (LinkedIn, Dice, APIs), company_specific (direct career pages), and startups",
-    "user_editable": "Categories with user_editable=true allow users to add custom sources via GUI",
     "api_sources": "No-signup APIs that return JSON. Add 'parser' key matching the parsing logic in fetch_api_async().",
     "playwright_sources": "Sites requiring JavaScript rendering. Add 'parser' key matching logic in scrape_with_playwright_async().",
     "scraping_sources": "Static HTML sites. Add 'parser' key and implement parsing logic in scrape_website_async().",
     "adding_new_source": "Set enabled=true and implement the parser logic in job_finder_bot.py if needed.",
-    "how_to_add": "1. Add entry to appropriate array with enabled=false. 2. Set category. 3. Implement parser. 4. Set enabled=true."
+    "how_to_add": "1. Add entry to appropriate array with enabled=false. 2. Test the API/URL manually. 3. Implement parser in job_finder_bot.py. 4. Set enabled=true."
   }
 }

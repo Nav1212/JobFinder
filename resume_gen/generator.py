@@ -148,16 +148,30 @@ Rewrite each bullet point on its own line, starting with a dash (-). Keep the sa
             return sentences
     
     def generate_resume(self, job_description: str, 
-                        sections: Dict[str, int] = None) -> Dict[str, List[str]]:
-        """Generate a complete tailored resume
+                        sections: Dict[str, int] = None) -> Dict:
+        """Generate a complete tailored resume with key elements
         
         Args:
             job_description: Job posting text
             sections: Dict of {section_type: max_items} to include
-                     Default: {"skill": 6, "experience": 4, "achievements": 3}
+                     Default: {"skill": 6, "experience": 4, "achievements": 3, "projects": 2}
         
         Returns:
-            Dict of {section_name: [sentences]}
+            {
+                "sections": {
+                    "skill": [
+                        {"text": "...", "score": 0.85, "match_type": "tag", 
+                         "matched_keywords": ["python", "api"], "tags": [...]}
+                    ], ...
+                },
+                "job_analysis": {
+                    "keywords": [...], "keyword_count": 12, "has_ml": True, ...
+                },
+                "stats": {
+                    "total_sentences": 15, "avg_score": 0.72,
+                    "by_match_type": {"tag": 8, "tfidf": 7}
+                }
+            }
         """
         if sections is None:
             sections = {
@@ -167,24 +181,59 @@ Rewrite each bullet point on its own line, starting with a dash (-). Keep the sa
                 "projects": 2
             }
         
-        resume = {}
+        # Analyze job description
+        job_analysis = self.analyze_job(job_description)
+        job_keywords = set(k.lower() for k in job_analysis["keywords"])
+        
+        resume_sections = {}
+        all_scores = []
+        match_type_counts = {"tag": 0, "tfidf": 0}
         
         for section_type, max_items in sections.items():
-            sentences = self.generate_section(job_description, section_type, max_items)
-            if sentences:
-                resume[section_type] = sentences
+            # Get matches with full metadata (sentence, score, match_type)
+            matches = self.matcher.match_by_type(job_description, section_type, top_k=max_items)
+            
+            section_items = []
+            for sentence, score, match_type in matches:
+                tags = sentence.get("tags", [])
+                # Find which tags matched job keywords
+                matched_kw = [t for t in tags if t.lower() in job_keywords]
+                
+                section_items.append({
+                    "text": sentence["text"],
+                    "score": round(score, 3),
+                    "match_type": match_type,
+                    "matched_keywords": matched_kw,
+                    "tags": tags
+                })
+                all_scores.append(score)
+                match_type_counts[match_type] = match_type_counts.get(match_type, 0) + 1
+            
+            if section_items:
+                resume_sections[section_type] = section_items
         
-        return resume
+        return {
+            "sections": resume_sections,
+            "job_analysis": job_analysis,
+            "stats": {
+                "total_sentences": len(all_scores),
+                "avg_score": round(sum(all_scores) / len(all_scores), 3) if all_scores else 0,
+                "by_match_type": match_type_counts
+            }
+        }
     
-    def format_resume_text(self, resume: Dict[str, List[str]], 
+    def format_resume_text(self, resume: Dict, 
                            include_header: bool = True) -> str:
         """Format resume dict as plain text
         
         Args:
-            resume: Dict from generate_resume()
+            resume: Dict from generate_resume() - handles new enriched format
             include_header: Whether to include user profile header
         """
         lines = []
+        
+        # Handle new enriched structure - extract sections
+        sections = resume.get("sections", resume)
         
         # Header
         if include_header:
@@ -210,12 +259,14 @@ Rewrite each bullet point on its own line, starting with a dash (-). Keep the sa
             "certifications": "CERTIFICATIONS"
         }
         
-        for section_type, sentences in resume.items():
+        for section_type, items in sections.items():
             title = section_titles.get(section_type, section_type.upper())
             lines.append(title)
             lines.append("-" * len(title))
-            for sentence in sentences:
-                lines.append(f"• {sentence}")
+            for item in items:
+                # Handle both old (str) and new (dict) formats
+                text = item["text"] if isinstance(item, dict) else item
+                lines.append(f"• {text}")
             lines.append("")
         
         return "\n".join(lines)

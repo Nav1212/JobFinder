@@ -133,7 +133,7 @@ class UserManager:
         del data["users"][username]
         self._save_data(data)
         
-        # TODO: Auto-delete orphaned RAG index when user is deleted
+        # Auto-delete orphaned RAG index when user is deleted
         # This prevents stale indexes from accumulating and saves disk space
         rag = _get_rag_module()
         if rag:

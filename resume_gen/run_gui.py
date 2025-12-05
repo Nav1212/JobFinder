@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from resume_gen.user_manager import UserManager
 from resume_gen.generator import ResumeGenerator
 from resume_gen.import_review_tab import ImportReviewTab
+from resume_gen.settings_tab import SettingsTab
 
 
 class ResumeGeneratorGUI:
@@ -74,6 +75,13 @@ class ResumeGeneratorGUI:
             status_callback=lambda msg: self.status_var.set(msg)
         )
         self.notebook.add(self.import_tab, text="📥 Import PDF")
+        
+        # Tab 5: Settings
+        self.settings_tab = SettingsTab(
+            self.notebook,
+            status_callback=lambda msg: self.status_var.set(msg)
+        )
+        self.notebook.add(self.settings_tab, text="⚙️ Settings")
         
         # Status bar
         self.status_var = tk.StringVar(value="Select or create a user to begin")
@@ -209,11 +217,27 @@ class ResumeGeneratorGUI:
         ttk.Button(btn_frame, text="📋 Paste from Clipboard", command=self.paste_job).pack(side='left', padx=10)
         ttk.Button(btn_frame, text="🗑️ Clear", command=lambda: self.job_text.delete('1.0', 'end')).pack(side='right')
         
-        # Right: generated resume
+        # Right: Key elements + expandable formatted text
         right_frame = ttk.LabelFrame(self.generate_tab, text="Generated Resume", padding="10")
         right_frame.pack(side='right', fill='both', expand=True)
         
-        self.resume_text = scrolledtext.ScrolledText(right_frame, wrap=tk.WORD, font=('Consolas', 10), height=20)
+        # Key elements section (always visible)
+        key_frame = ttk.LabelFrame(right_frame, text="🔑 Key Elements", padding="10")
+        key_frame.pack(fill='both', expand=True, pady=(0, 5))
+        
+        self.key_elements_text = scrolledtext.ScrolledText(key_frame, wrap=tk.WORD, font=('Consolas', 9), height=12)
+        self.key_elements_text.pack(fill='both', expand=True)
+        
+        # Expandable formatted resume section
+        self.resume_expanded = tk.BooleanVar(value=False)
+        expand_btn_frame = ttk.Frame(right_frame)
+        expand_btn_frame.pack(fill='x', pady=(5, 0))
+        self.expand_btn = ttk.Button(expand_btn_frame, text="▶ Show Formatted Resume", command=self.toggle_resume_expand)
+        self.expand_btn.pack(side='left')
+        
+        # Frame for formatted resume (initially hidden)
+        self.resume_frame = ttk.LabelFrame(right_frame, text="📄 Formatted Resume", padding="10")
+        self.resume_text = scrolledtext.ScrolledText(self.resume_frame, wrap=tk.WORD, font=('Consolas', 10), height=10)
         self.resume_text.pack(fill='both', expand=True)
         
         # Export button
@@ -222,6 +246,17 @@ class ResumeGeneratorGUI:
         
         ttk.Button(export_frame, text="💾 Save to File", command=self.save_resume).pack(side='left')
         ttk.Button(export_frame, text="📋 Copy to Clipboard", command=self.copy_resume).pack(side='left', padx=10)
+    
+    def toggle_resume_expand(self):
+        """Toggle visibility of formatted resume"""
+        if self.resume_expanded.get():
+            self.resume_frame.pack_forget()
+            self.expand_btn.config(text="▶ Show Formatted Resume")
+            self.resume_expanded.set(False)
+        else:
+            self.resume_frame.pack(fill='both', expand=True, pady=(5, 0))
+            self.expand_btn.config(text="▼ Hide Formatted Resume")
+            self.resume_expanded.set(True)
     
     # ==================== User Operations ====================
     
@@ -413,13 +448,49 @@ class ResumeGeneratorGUI:
         self.root.update()
         
         try:
-            resume = self.generator.generate_resume(job_desc)
-            formatted = self.generator.format_resume_text(resume)
+            result = self.generator.generate_resume(job_desc)
             
+            # Format key elements display
+            key_lines = []
+            key_lines.append("📊 MATCHING STATS")
+            key_lines.append(f"   Total sentences: {result['stats']['total_sentences']}")
+            key_lines.append(f"   Avg relevance:   {result['stats']['avg_score']:.1%}")
+            key_lines.append(f"   Tag matches:     {result['stats']['by_match_type'].get('tag', 0)}")
+            key_lines.append(f"   TF-IDF matches:  {result['stats']['by_match_type'].get('tfidf', 0)}")
+            key_lines.append("")
+            
+            key_lines.append("🔍 JOB KEYWORDS DETECTED")
+            keywords = result['job_analysis']['keywords'][:15]
+            key_lines.append(f"   {', '.join(keywords)}")
+            if result['job_analysis']['has_ml']:
+                key_lines.append("   ✓ ML/AI requirement detected")
+            if result['job_analysis']['has_leadership']:
+                key_lines.append("   ✓ Leadership requirement detected")
+            if result['job_analysis']['has_cloud']:
+                key_lines.append("   ✓ Cloud requirement detected")
+            key_lines.append("")
+            
+            key_lines.append("✅ MATCHED SENTENCES BY SECTION")
+            for section, items in result['sections'].items():
+                key_lines.append(f"\n   {section.upper()}:")
+                for item in items:
+                    score_pct = f"{item['score']:.0%}"
+                    match_icon = "🏷️" if item['match_type'] == 'tag' else "📝"
+                    text_preview = item['text'][:55] + "..." if len(item['text']) > 55 else item['text']
+                    kw_str = ""
+                    if item['matched_keywords']:
+                        kw_str = f" [{', '.join(item['matched_keywords'][:3])}]"
+                    key_lines.append(f"      {match_icon} {score_pct:>4} {text_preview}{kw_str}")
+            
+            self.key_elements_text.delete('1.0', 'end')
+            self.key_elements_text.insert('1.0', '\n'.join(key_lines))
+            
+            # Format full resume text
+            formatted = self.generator.format_resume_text(result)
             self.resume_text.delete('1.0', 'end')
             self.resume_text.insert('1.0', formatted)
             
-            self.status_var.set(f"Generated resume with {sum(len(v) for v in resume.values())} bullet points")
+            self.status_var.set(f"Generated resume with {result['stats']['total_sentences']} bullet points")
         except Exception as e:
             messagebox.showerror("Error", f"Generation failed: {e}")
             self.status_var.set("Generation failed")
