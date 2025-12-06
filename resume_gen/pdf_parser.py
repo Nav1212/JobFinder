@@ -1,14 +1,21 @@
 """
 PDF Resume Parser with LLM-based analysis
 Extracts text from PDF resumes and uses LLM to categorize and score sentences
+
+Architecture:
+- Parsing (sentence extraction): Uses small/fast model via SentenceParser
+- Grading (scoring sentences): Uses medium model for quality assessment
 """
 
 import json
 import re
 import requests
+import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
+
+from .sentence_parser import SentenceParser, load_parser_from_config
 
 
 @dataclass
@@ -73,11 +80,43 @@ class ReviewSession:
 class PDFParser:
     """Parses PDF resumes and extracts structured data"""
     
-    def __init__(self, llm_base_url: str = "http://localhost:11434", 
-                 llm_model: str = "llama3.1:8b"):
-        self.llm_base_url = llm_base_url
-        self.llm_model = llm_model
+    def __init__(self, llm_base_url: str = None, 
+                 llm_model: str = None,
+                 parsing_model: str = None):
+        """
+        Initialize PDF Parser with configurable models.
+        
+        Args:
+            llm_base_url: Ollama API URL (default from config)
+            llm_model: Model for grading/scoring (default from config)
+            parsing_model: Model for sentence extraction (default from config)
+        """
+        # Load from config if not provided
+        config = self._load_config()
+        models_config = config.get('models', {})
+        
+        self.llm_base_url = llm_base_url or models_config.get('ollama_url', 'http://localhost:11434')
+        self.llm_model = llm_model or models_config.get('grading_model', 'llama3.1:8b')
+        self.parsing_model = parsing_model or models_config.get('parsing_model', 'llama3.2:1b')
+        
+        # Initialize sentence parser with dedicated parsing model
+        self.sentence_parser = SentenceParser(
+            model=self.parsing_model,
+            base_url=self.llm_base_url
+        )
+        
         self._check_dependencies()
+    
+    def _load_config(self) -> Dict:
+        """Load config.yaml"""
+        config_path = Path(__file__).parent.parent / 'config.yaml'
+        try:
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    return yaml.safe_load(f) or {}
+        except:
+            pass
+        return {}
     
     def _check_dependencies(self):
         """Check if required PDF libraries are available"""
@@ -255,6 +294,58 @@ Sentences to analyze:
             print(f"  [BATCH] Response preview: {response[:500]}...")
             return []
     
+    def _grade_single_sentence(self, sentence: str) -> Dict:
+        """Grade a single sentence and return analysis dict"""
+        prompt = f"""Analyze this resume bullet point. Return ONLY a JSON object with:
+- category: One of [skills, experience, achievements, projects, education, certifications, summary]
+- suggested_category: Your suggested category if different (or same if confident)
+- tags: Relevant skill/topic tags as array
+- categorization_confidence: 0-100 how confident in category
+- extraction_quality: 0-100 how clean/well-formed the text is
+- impact_score: 0-100 how impactful/impressive
+- impact_suggestion: Rewritten more impactful version (or empty if good)
+- extraction_issues: Array of any issues found
+
+Sentence: {sentence}
+
+JSON Response:"""
+        
+        response = self._call_llm(prompt)
+        
+        # Check for LLM errors
+        if response.startswith("LLM_ERROR:"):
+            error_msg = response.replace('LLM_ERROR: ', '')
+            print(f"  [GRADE] LLM error: {error_msg}")
+            return self._default_analysis(error_msg)
+        
+        # Parse JSON response
+        try:
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                # Validate required fields exist
+                if 'category' in parsed:
+                    return parsed
+            
+            print(f"  [GRADE] No valid JSON in response: {response[:200]}...")
+            return self._default_analysis("Invalid LLM response format")
+        except json.JSONDecodeError as e:
+            print(f"  [GRADE] JSON parse error: {e}")
+            return self._default_analysis("JSON parse error")
+    
+    def _default_analysis(self, error_msg: str = "") -> Dict:
+        """Return default analysis dict when LLM fails"""
+        return {
+            "category": "experience",
+            "suggested_category": "experience",
+            "tags": [],
+            "categorization_confidence": 50,
+            "extraction_quality": 80,
+            "impact_score": 50,
+            "impact_suggestion": "",
+            "extraction_issues": [error_msg] if error_msg else []
+        }
+    
     def _analyze_single_sentence(self, sentence: str) -> Dict:
         """Analyze a single sentence (for re-scoring after edits)"""
         prompt = f"""Analyze this resume bullet point and return a JSON object with:
@@ -280,12 +371,13 @@ Return ONLY valid JSON, no other text:"""
         except json.JSONDecodeError:
             return {}
     
-    def parse_pdf(self, pdf_path: str, callback=None) -> ReviewSession:
+    def parse_pdf(self, pdf_path: str, callback=None, use_llm_parsing: bool = True) -> ReviewSession:
         """Parse a PDF resume and return a ReviewSession
         
         Args:
             pdf_path: Path to PDF file
             callback: Optional callback(progress, message) for progress updates
+            use_llm_parsing: If True, use LLM for sentence parsing (slower but more accurate)
         """
         session = ReviewSession(source_file=pdf_path)
         
@@ -301,71 +393,41 @@ Return ONLY valid JSON, no other text:"""
             session.parse_errors.append("No text extracted from PDF")
             return session
         
-        # Step 2: Split into sentences
+        # Step 2: Parse into sentences (using dedicated parsing model)
         if callback:
-            callback(0.2, "Splitting into sentences...")
+            callback(0.15, f"Parsing sentences with {self.parsing_model}...")
         
-        raw_sentences = self._split_into_sentences(text)
+        if use_llm_parsing:
+            # Use LLM-based sentence parser (small model, handles OCR errors)
+            parse_result = self.sentence_parser.parse(text)
+            raw_sentences = [s.text for s in parse_result.sentences]
+            session.parse_errors.extend(parse_result.parse_errors)
+            
+            if callback:
+                callback(0.25, f"Found {len(raw_sentences)} sentences")
+        else:
+            # Fallback to regex-based splitting (fast but less accurate)
+            raw_sentences = self._split_into_sentences(text)
         
         if not raw_sentences:
             session.parse_errors.append("No valid sentences found in PDF")
             return session
         
-        # Step 3: Analyze with LLM in batches
-        batch_size = 10
-        all_analyses = []
+        # Step 3: Grade/analyze with LLM (using grading model) - one at a time for reliability
+        if callback:
+            callback(0.3, f"Grading sentences with {self.llm_model}...")
         
-        for i in range(0, len(raw_sentences), batch_size):
-            batch = raw_sentences[i:i+batch_size]
-            progress = 0.2 + (0.7 * (i / len(raw_sentences)))
+        all_analyses = []
+        total = len(raw_sentences)
+        
+        for i, sentence in enumerate(raw_sentences):
+            progress = 0.3 + (0.6 * (i / total))
             
             if callback:
-                callback(progress, f"Analyzing sentences {i+1}-{min(i+batch_size, len(raw_sentences))}...")
+                callback(progress, f"Grading sentence {i+1}/{total}...")
             
-            analyses = self._analyze_sentence_batch(batch)
-            
-            # If LLM failed or returned wrong count, create default entries
-            if len(analyses) != len(batch):
-                print(f"  [FALLBACK] Expected {len(batch)} results, got {len(analyses)}")
-                
-                # Determine the specific error
-                if len(analyses) == 0:
-                    # Complete failure - test connection
-                    error_msg = "LLM returned no results"
-                    test_response = self._call_llm("Say OK")
-                    if "LLM_ERROR" in test_response:
-                        if "Connection refused" in test_response or "connect" in test_response.lower():
-                            error_msg = "Ollama not running - start with: ollama serve"
-                        elif "404" in test_response or "not found" in test_response.lower():
-                            error_msg = f"Model '{self.llm_model}' not found - run: ollama pull {self.llm_model}"
-                        elif "timeout" in test_response.lower():
-                            error_msg = "LLM request timed out - try smaller batch or wait"
-                        else:
-                            error_msg = test_response.replace('LLM_ERROR: ', '')
-                    else:
-                        # LLM works but didn't return valid JSON
-                        error_msg = "LLM response was not valid JSON - model may be struggling with batch size"
-                else:
-                    # Partial results - count mismatch
-                    error_msg = f"LLM returned {len(analyses)}/{len(batch)} results - some sentences may be too long"
-                
-                print(f"  [FALLBACK] Error: {error_msg}")
-                
-                # Fill in missing analyses with defaults
-                analyses = []
-                for sentence in batch:
-                    analyses.append({
-                        "category": "experience",
-                        "suggested_category": "experience",
-                        "tags": [],
-                        "categorization_confidence": 50,
-                        "extraction_quality": 80,
-                        "impact_score": 50,
-                        "impact_suggestion": "",
-                        "extraction_issues": [error_msg]
-                    })
-            
-            all_analyses.extend(analyses)
+            analysis = self._grade_single_sentence(sentence)
+            all_analyses.append(analysis)
         
         # Step 4: Create ParsedSentence objects
         if callback:

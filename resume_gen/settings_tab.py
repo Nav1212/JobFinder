@@ -7,6 +7,10 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 import yaml
+import threading
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from core.model_manager import get_model_manager, ModelType, KNOWN_MODELS
 
 
 class SettingsTab(ttk.Frame):
@@ -17,6 +21,10 @@ class SettingsTab(ttk.Frame):
         # Config file path
         self.config_path = Path(__file__).parent.parent / 'config.yaml'
         self.password_visible = False
+        self.model_manager = get_model_manager()
+        
+        # Track installing models
+        self._installing = False
         
         self.create_widgets()
         self.load_config()
@@ -167,6 +175,127 @@ class SettingsTab(ttk.Frame):
         
         rag_frame.columnconfigure(1, weight=1)
         
+        # ==================== LLM Models Section ====================
+        models_frame = ttk.LabelFrame(content_frame, text="🤖 LLM Models", padding="15")
+        models_frame.pack(fill='x', pady=(0, 15), padx=5)
+        
+        # Get available models
+        gen_models = [info.name for info in KNOWN_MODELS.values() if info.model_type == ModelType.GENERATION]
+        
+        # Parsing Model
+        ttk.Label(models_frame, text="Parsing Model:").grid(row=0, column=0, sticky='w', pady=5)
+        self.parsing_model_var = tk.StringVar()
+        self.parsing_combo = ttk.Combobox(
+            models_frame, 
+            textvariable=self.parsing_model_var, 
+            width=20,
+            values=gen_models
+        )
+        self.parsing_combo.grid(row=0, column=1, sticky='w', padx=(10, 0), pady=5)
+        self.parsing_combo.bind('<<ComboboxSelected>>', lambda e: self._on_model_selected('parsing'))
+        self.parsing_status = ttk.Label(models_frame, text="", width=3)
+        self.parsing_status.grid(row=0, column=2, padx=(5, 0), pady=5)
+        
+        ttk.Label(
+            models_frame, 
+            text="Small model for sentence extraction (fast)",
+            foreground='gray',
+            font=('Arial', 8)
+        ).grid(row=0, column=3, sticky='w', padx=(10, 0), pady=5)
+        
+        # Grading Model
+        ttk.Label(models_frame, text="Grading Model:").grid(row=1, column=0, sticky='w', pady=5)
+        self.grading_model_var = tk.StringVar()
+        self.grading_combo = ttk.Combobox(
+            models_frame, 
+            textvariable=self.grading_model_var, 
+            width=20,
+            values=gen_models
+        )
+        self.grading_combo.grid(row=1, column=1, sticky='w', padx=(10, 0), pady=5)
+        self.grading_combo.bind('<<ComboboxSelected>>', lambda e: self._on_model_selected('grading'))
+        self.grading_status = ttk.Label(models_frame, text="", width=3)
+        self.grading_status.grid(row=1, column=2, padx=(5, 0), pady=5)
+        
+        ttk.Label(
+            models_frame, 
+            text="Medium model for scoring sentences",
+            foreground='gray',
+            font=('Arial', 8)
+        ).grid(row=1, column=3, sticky='w', padx=(10, 0), pady=5)
+        
+        # Polishing Model
+        ttk.Label(models_frame, text="Polishing Model:").grid(row=2, column=0, sticky='w', pady=5)
+        self.polishing_model_var = tk.StringVar()
+        self.polishing_combo = ttk.Combobox(
+            models_frame, 
+            textvariable=self.polishing_model_var, 
+            width=20,
+            values=gen_models
+        )
+        self.polishing_combo.grid(row=2, column=1, sticky='w', padx=(10, 0), pady=5)
+        self.polishing_combo.bind('<<ComboboxSelected>>', lambda e: self._on_model_selected('polishing'))
+        self.polishing_status = ttk.Label(models_frame, text="", width=3)
+        self.polishing_status.grid(row=2, column=2, padx=(5, 0), pady=5)
+        
+        ttk.Label(
+            models_frame, 
+            text="Larger model for rewriting text",
+            foreground='gray',
+            font=('Arial', 8)
+        ).grid(row=2, column=3, sticky='w', padx=(10, 0), pady=5)
+        
+        # Warning frame for same model
+        self.same_model_warning = ttk.Frame(models_frame)
+        self.same_model_warning.grid(row=3, column=0, columnspan=4, sticky='w', pady=(10, 0))
+        
+        self.warning_icon = ttk.Label(
+            self.same_model_warning, 
+            text="⚠️", 
+            foreground='orange',
+            font=('Arial', 12)
+        )
+        self.warning_icon.pack(side='left')
+        
+        self.warning_label = ttk.Label(
+            self.same_model_warning,
+            text="Grading and Polishing use the same model",
+            foreground='orange',
+            font=('Arial', 9)
+        )
+        self.warning_label.pack(side='left', padx=(5, 0))
+        
+        # Tooltip on hover
+        self.warning_tooltip = (
+            "Using the same model for grading and polishing can be suboptimal:\n"
+            "• Grading needs consistent scoring (medium model works well)\n"
+            "• Polishing benefits from larger models for better rewrites\n"
+            "• Different models reduce bias in evaluation"
+        )
+        self.warning_icon.bind('<Enter>', self._show_warning_tooltip)
+        self.warning_icon.bind('<Leave>', self._hide_warning_tooltip)
+        self.warning_label.bind('<Enter>', self._show_warning_tooltip)
+        self.warning_label.bind('<Leave>', self._hide_warning_tooltip)
+        
+        # Initially hide warning
+        self.same_model_warning.grid_remove()
+        
+        # Ollama URL
+        ttk.Label(models_frame, text="Ollama URL:").grid(row=4, column=0, sticky='w', pady=(15, 5))
+        self.ollama_url_var = tk.StringVar(value="http://localhost:11434")
+        ttk.Entry(models_frame, textvariable=self.ollama_url_var, width=30).grid(
+            row=4, column=1, columnspan=2, sticky='w', padx=(10, 0), pady=(15, 5)
+        )
+        
+        # Check Ollama status button
+        ttk.Button(
+            models_frame, 
+            text="🔍 Check Models", 
+            command=self._refresh_model_status
+        ).grid(row=4, column=3, sticky='w', padx=(10, 0), pady=(15, 5))
+        
+        models_frame.columnconfigure(3, weight=1)
+        
         # ==================== Action Buttons ====================
         btn_frame = ttk.Frame(content_frame)
         btn_frame.pack(fill='x', pady=(15, 0), padx=5)
@@ -237,8 +366,19 @@ class SettingsTab(ttk.Frame):
                 self.similarity_var.set(rag.get('similarity_threshold', 0.85))
                 self.topk_var.set(rag.get('top_k', 10))
                 
+                # Models
+                models = config.get('models', {})
+                self.parsing_model_var.set(models.get('parsing_model', 'llama3.2:1b'))
+                self.grading_model_var.set(models.get('grading_model', 'llama3.1:8b'))
+                self.polishing_model_var.set(models.get('polishing_model', 'llama3.1:8b'))
+                self.ollama_url_var.set(models.get('ollama_url', 'http://localhost:11434'))
+                
                 # Update threshold label
                 self.threshold_label.config(text=f"{self.similarity_var.get():.2f}")
+                
+                # Update model status and warning
+                self._refresh_model_status()
+                self._check_same_model_warning()
                 
                 self.status_callback("Settings loaded")
             else:
@@ -272,6 +412,12 @@ class SettingsTab(ttk.Frame):
                     'embedding_model': self.embedding_model_var.get(),
                     'similarity_threshold': round(self.similarity_var.get(), 2),
                     'top_k': self.topk_var.get()
+                },
+                'models': {
+                    'parsing_model': self.parsing_model_var.get(),
+                    'grading_model': self.grading_model_var.get(),
+                    'polishing_model': self.polishing_model_var.get(),
+                    'ollama_url': self.ollama_url_var.get()
                 }
             }
             
@@ -302,4 +448,192 @@ class SettingsTab(ttk.Frame):
         self.similarity_var.set(0.85)
         self.topk_var.set(10)
         self.threshold_label.config(text="0.85")
+        
+        # Model defaults
+        self.parsing_model_var.set('llama3.2:1b')
+        self.grading_model_var.set('llama3.1:8b')
+        self.polishing_model_var.set('llama3.1:8b')
+        self.ollama_url_var.set('http://localhost:11434')
+        
+        self._check_same_model_warning()
         self.status_callback("Reset to defaults")
+    
+    # ==================== Model Management Methods ====================
+    
+    def _on_model_selected(self, model_type: str):
+        """Handle model selection from combobox"""
+        if model_type == 'parsing':
+            model = self.parsing_model_var.get()
+        elif model_type == 'grading':
+            model = self.grading_model_var.get()
+        else:
+            model = self.polishing_model_var.get()
+        
+        # Check if model is installed
+        if not self.model_manager.is_model_installed(model):
+            self._prompt_install_model(model, model_type)
+        else:
+            self._update_model_status(model_type, installed=True)
+        
+        # Check same model warning
+        self._check_same_model_warning()
+    
+    def _prompt_install_model(self, model: str, model_type: str):
+        """Prompt user to install a model that's not installed"""
+        info = self.model_manager.get_model_info(model)
+        
+        if info:
+            size_str = info.size_display()
+            desc = info.description
+            msg = f"Model '{model}' is not installed.\n\n{desc}\nSize: {size_str}\n\nDo you want to install it now?"
+        else:
+            msg = f"Model '{model}' is not installed.\n\nDo you want to install it now?"
+        
+        if messagebox.askyesno("Install Model", msg):
+            self._install_model(model, model_type)
+        else:
+            self._update_model_status(model_type, installed=False)
+    
+    def _install_model(self, model: str, model_type: str):
+        """Install a model in background"""
+        if self._installing:
+            messagebox.showinfo("Please Wait", "Another model is currently installing.")
+            return
+        
+        self._installing = True
+        self._update_model_status(model_type, installing=True)
+        self.status_callback(f"Installing {model}...")
+        
+        # Create progress window
+        progress_win = tk.Toplevel(self)
+        progress_win.title(f"Installing {model}")
+        progress_win.geometry("400x150")
+        progress_win.resizable(False, False)
+        
+        ttk.Label(progress_win, text=f"Installing {model}...", font=('Arial', 10, 'bold')).pack(pady=10)
+        
+        progress_text = tk.Text(progress_win, height=5, width=50, state='disabled')
+        progress_text.pack(pady=5, padx=10, fill='both', expand=True)
+        
+        def on_progress(msg):
+            # Thread-safe UI update
+            def update():
+                try:
+                    if progress_win.winfo_exists():
+                        progress_text.config(state='normal')
+                        progress_text.insert('end', msg + '\n')
+                        progress_text.see('end')
+                        progress_text.config(state='disabled')
+                except:
+                    pass
+            self.after(0, update)
+        
+        def on_complete(success, msg):
+            # Thread-safe UI update
+            def finish():
+                self._installing = False
+                try:
+                    if success:
+                        self._update_model_status(model_type, installed=True)
+                        self.status_callback(f"Installed {model}")
+                        # Refresh cache after successful install
+                        self.model_manager._installed_cache = None
+                        messagebox.showinfo("Success", msg)
+                    else:
+                        self._update_model_status(model_type, installed=False)
+                        self.status_callback(f"Failed to install {model}")
+                        messagebox.showerror("Installation Failed", msg)
+                    
+                    if progress_win.winfo_exists():
+                        progress_win.destroy()
+                except Exception as e:
+                    print(f"Error in install completion: {e}")
+            self.after(0, finish)
+        
+        # Start installation in background
+        self.model_manager.install_model(model, on_progress, on_complete)
+    
+    def _update_model_status(self, model_type: str, installed: bool = None, installing: bool = False):
+        """Update the status indicator for a model"""
+        if model_type == 'parsing':
+            label = self.parsing_status
+        elif model_type == 'grading':
+            label = self.grading_status
+        else:
+            label = self.polishing_status
+        
+        if installing:
+            label.config(text="⏳", foreground='blue')
+        elif installed:
+            label.config(text="✓", foreground='green')
+        elif installed is False:
+            label.config(text="✗", foreground='red')
+        else:
+            label.config(text="")
+    
+    def _refresh_model_status(self):
+        """Refresh status indicators for all models"""
+        self.model_manager._installed_cache = None  # Force refresh
+        
+        if not self.model_manager.is_ollama_running():
+            self.status_callback("Ollama is not running")
+            self._update_model_status('parsing', installed=False)
+            self._update_model_status('grading', installed=False)
+            self._update_model_status('polishing', installed=False)
+            messagebox.showwarning("Ollama Not Running", 
+                "Ollama server is not running.\nStart it with: ollama serve")
+            return
+        
+        # Check each model
+        for model_type, var in [
+            ('parsing', self.parsing_model_var),
+            ('grading', self.grading_model_var),
+            ('polishing', self.polishing_model_var)
+        ]:
+            model = var.get()
+            installed = self.model_manager.is_model_installed(model)
+            self._update_model_status(model_type, installed=installed)
+        
+        # Check embedding model too
+        emb_model = self.embedding_model_var.get()
+        if not self.model_manager.is_model_installed(emb_model):
+            self.status_callback(f"Embedding model {emb_model} not installed")
+        
+        self.status_callback("Model status refreshed")
+    
+    def _check_same_model_warning(self):
+        """Show/hide warning if grading and polishing use same model"""
+        grading = self.grading_model_var.get()
+        polishing = self.polishing_model_var.get()
+        
+        if grading and polishing and grading == polishing:
+            self.same_model_warning.grid()
+        else:
+            self.same_model_warning.grid_remove()
+    
+    def _show_warning_tooltip(self, event):
+        """Show tooltip on hover"""
+        x, y, _, _ = self.warning_icon.bbox("insert") if hasattr(self.warning_icon, 'bbox') else (0, 0, 0, 0)
+        x += self.warning_icon.winfo_rootx() + 25
+        y += self.warning_icon.winfo_rooty() + 25
+        
+        self._tooltip = tk.Toplevel(self)
+        self._tooltip.wm_overrideredirect(True)
+        self._tooltip.wm_geometry(f"+{x}+{y}")
+        
+        label = ttk.Label(
+            self._tooltip, 
+            text=self.warning_tooltip,
+            background='lightyellow',
+            relief='solid',
+            borderwidth=1,
+            padding=5,
+            font=('Arial', 9)
+        )
+        label.pack()
+    
+    def _hide_warning_tooltip(self, event):
+        """Hide tooltip"""
+        if hasattr(self, '_tooltip') and self._tooltip:
+            self._tooltip.destroy()
+            self._tooltip = None
