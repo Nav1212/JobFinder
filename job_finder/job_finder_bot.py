@@ -70,7 +70,7 @@ except ImportError:
 
 
 class JobFinder:
-    def __init__(self, resume_path, email_config=None, db_path=None):
+    def __init__(self, resume_path, email_config=None, db_path=None, rag_user=None):
         """
         Initialize job finder with resume and optional email configuration
         
@@ -78,9 +78,11 @@ class JobFinder:
             resume_path: Path to PDF resume file
             email_config: Dict with 'sender', 'password', 'recipient' for Gmail SMTP
             db_path: Path to database file (optional, defaults to jobs_database.db)
+            rag_user: Optional username from Resume Generator for vectorized matching
         """
         self.resume_path = resume_path
         self.email_config = email_config
+        self.rag_user = rag_user  # Store for later use
         self.resume_text = self.extract_resume_text(resume_path)
         
         # Initialize Database
@@ -188,12 +190,17 @@ class JobFinder:
             return
         
         try:
-            # Try to find user by resume filename
-            resume_filename = Path(resume_path).name
             indexes_dir = str(Path(__file__).parent.parent / 'resume_gen' / 'indexes')
+            username = None
             
-            # Look up username from filename
-            username = rag.get_username_from_filename(resume_filename, indexes_dir)
+            # Use explicit rag_user if provided, otherwise try auto-detection
+            if self.rag_user:
+                username = self.rag_user
+                print(f"✓ Using specified Resume Generator profile: {username}")
+            else:
+                # Try to find user by resume filename (auto-detect)
+                resume_filename = Path(resume_path).name
+                username = rag.get_username_from_filename(resume_filename, indexes_dir)
             
             if username:
                 idx = rag.UserRAGIndex(username, indexes_dir)
@@ -208,8 +215,10 @@ class JobFinder:
                         _rag_warning_shown = True
             else:
                 if not _rag_warning_shown:
+                    resume_filename = Path(resume_path).name
                     print(f"⚠ Resume '{resume_filename}' not linked to any user profile.")
                     print("  To set up RAG matching: Open Resume Generator GUI → Import your resume")
+                    print("  Or specify --rag-user to use a specific profile.")
                     print("  Falling back to simple text truncation for job matching.")
                     _rag_warning_shown = True
                     
@@ -1967,6 +1976,7 @@ def main():
     parser.add_argument('--min-score', type=int, default=600, help='Minimum match score to save (default: 600/1000 = 60/100)')
     parser.add_argument('--high-threshold', type=int, default=800, help='High match threshold for email (default: 800/1000 = 80/100)')
     parser.add_argument('--workers', type=int, default=8, help='Number of parallel LLM worker threads (default: 8, max: 12)')
+    parser.add_argument('--rag-user', type=str, help='Resume Generator user profile for vectorized matching (overrides auto-detection)')
     
     args = parser.parse_args()
     
@@ -2059,7 +2069,7 @@ def main():
         try:
             # Initialize job finder for this resume
             db_path = project_root / config['paths']['database']
-            finder = JobFinder(str(resume_path), email_config, str(db_path))
+            finder = JobFinder(str(resume_path), email_config, str(db_path), rag_user=args.rag_user)
             
             # Run job search
             results = finder.find_jobs(

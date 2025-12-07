@@ -161,7 +161,9 @@
       "type": "playwright",
       "parser": "indeed",
       "category": "main",
-      "countries": ["ca"],
+      "countries": [
+        "ca"
+      ],
       "description": "Major job board (DISABLED - Cloudflare blocked)"
     },
     {
@@ -171,7 +173,9 @@
       "type": "playwright",
       "parser": "indeed",
       "category": "main",
-      "countries": ["us"],
+      "countries": [
+        "us"
+      ],
       "description": "Major job board (DISABLED - Cloudflare blocked)"
     },
     {
@@ -210,7 +214,12 @@
       "type": "scraping",
       "parser": "dice",
       "category": "main",
-      "keywords": ["engineer", "developer", "data", "software"],
+      "keywords": [
+        "engineer",
+        "developer",
+        "data",
+        "software"
+      ],
       "description": "Tech-focused job board"
     },
     {
@@ -243,7 +252,7 @@
     {
       "name": "Wellfound",
       "url": "https://wellfound.com/jobs",
-      "enabled": false,
+      "enabled": true,
       "type": "scraping",
       "parser": "wellfound",
       "category": "startups",
@@ -252,7 +261,7 @@
     {
       "name": "Y Combinator Jobs",
       "url": "https://www.workatastartup.com/jobs",
-      "enabled": false,
+      "enabled": true,
       "type": "scraping",
       "parser": "ycombinator",
       "category": "startups",
@@ -261,7 +270,7 @@
     {
       "name": "Startup Jobs",
       "url": "https://startup.jobs",
-      "enabled": false,
+      "enabled": true,
       "type": "scraping",
       "parser": "startupjobs",
       "category": "startups",
@@ -270,7 +279,7 @@
     {
       "name": "We Work Remotely",
       "url": "https://weworkremotely.com/remote-jobs/search",
-      "enabled": false,
+      "enabled": true,
       "type": "scraping",
       "parser": "weworkremotely",
       "category": "startups",
