@@ -150,7 +150,25 @@ class UserRAGIndex:
         if not texts:
             return np.array([], dtype=np.float32).reshape(0, self.embedding_dim)
         
-        embeddings = self.llm.embed(texts, model=self.embedding_model)
+        try:
+            embeddings = self.llm.embed(texts, model=self.embedding_model, auto_install=True)
+        except Exception as e:
+            print(f"Embedding error: {e}")
+            # Try installing model if it failed
+            try:
+                from .model_manager import get_model_manager
+                manager = get_model_manager()
+                if not manager.is_model_installed(self.embedding_model):
+                    print(f"Installing embedding model {self.embedding_model}...")
+                    success, msg = manager.install_model_sync(self.embedding_model)
+                    if success:
+                        embeddings = self.llm.embed(texts, model=self.embedding_model)
+                    else:
+                        raise RuntimeError(f"Failed to install {self.embedding_model}: {msg}")
+                else:
+                    raise
+            except ImportError:
+                raise
         
         # Ensure 2D array
         if embeddings.ndim == 1:

@@ -385,7 +385,9 @@ class SettingsTab(ttk.Frame):
                 self.reset_defaults()
                 self.status_callback("No config found - using defaults")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load config:\n{e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Failed to load config:\n{e}\n\nCheck console for details.")
     
     def save_config(self):
         """Save settings to config.yaml"""

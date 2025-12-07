@@ -99,6 +99,11 @@ class PDFParser:
         self.llm_model = llm_model or models_config.get('grading_model', 'llama3.1:8b')
         self.parsing_model = parsing_model or models_config.get('parsing_model', 'llama3.2:1b')
         
+        # Resume filtering settings
+        filter_config = config.get('resume_filter', {})
+        self.allowed_categories = filter_config.get('allowed_categories', ['skills', 'experience'])
+        self.min_impact_score = filter_config.get('min_impact_score', 1)
+        
         # Initialize sentence parser with dedicated parsing model
         self.sentence_parser = SentenceParser(
             model=self.parsing_model,
@@ -429,28 +434,44 @@ Return ONLY valid JSON, no other text:"""
             analysis = self._grade_single_sentence(sentence)
             all_analyses.append(analysis)
         
-        # Step 4: Create ParsedSentence objects
+        # Step 4: Create ParsedSentence objects (with filtering from config)
         if callback:
             callback(0.95, "Finalizing results...")
         
+        filtered_count = 0
         for sentence, analysis in zip(raw_sentences, all_analyses):
+            # Filter by impact score (from config, default 1)
+            impact_score = int(analysis.get("impact_score", 50))
+            if impact_score < self.min_impact_score:
+                filtered_count += 1
+                continue
+                
+            # Filter by category (from config, default ['skills', 'experience'])
+            category = analysis.get("category", "experience")
+            if category.lower() not in [c.lower() for c in self.allowed_categories]:
+                filtered_count += 1
+                continue
+                
             parsed = ParsedSentence(
                 text=sentence,
                 original_text=sentence,
-                category=analysis.get("category", "experience"),
-                suggested_category=analysis.get("suggested_category", analysis.get("category", "experience")),
+                category=category,
+                suggested_category=analysis.get("suggested_category", category),
                 tags=analysis.get("tags", []) if isinstance(analysis.get("tags"), list) else 
                      [t.strip() for t in str(analysis.get("tags", "")).split(",") if t.strip()],
                 categorization_confidence=int(analysis.get("categorization_confidence", 50)),
                 extraction_quality=int(analysis.get("extraction_quality", 80)),
-                impact_score=int(analysis.get("impact_score", 50)),
+                impact_score=impact_score,
                 impact_suggestion=analysis.get("impact_suggestion", ""),
                 extraction_issues=analysis.get("extraction_issues", []) if isinstance(analysis.get("extraction_issues"), list) else []
             )
             session.sentences.append(parsed)
         
         if callback:
-            callback(1.0, f"Parsed {len(session.sentences)} sentences")
+            msg = f"Parsed {len(session.sentences)} sentences"
+            if filtered_count > 0:
+                msg += f" (filtered {filtered_count})"
+            callback(1.0, msg)
         
         return session
     

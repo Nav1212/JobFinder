@@ -35,7 +35,10 @@ import queue
 import html
 import re
 import yaml
-from .database import DatabaseManager
+try:
+    from .database import DatabaseManager
+except ImportError:
+    from database import DatabaseManager
 
 # Import shared LLM client from core
 import os

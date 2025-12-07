@@ -49,6 +49,9 @@ class ResumeGeneratorGUI:
             font=('Arial', 16, 'bold')
         ).pack(pady=(0, 10))
         
+        # Create status var BEFORE tabs that need it
+        self.status_var = tk.StringVar(value="Select or create a user to begin")
+        
         # Create notebook (tabs)
         self.notebook = ttk.Notebook(main_frame)
         self.notebook.pack(fill='both', expand=True)
@@ -83,8 +86,7 @@ class ResumeGeneratorGUI:
         )
         self.notebook.add(self.settings_tab, text="⚙️ Settings")
         
-        # Status bar
-        self.status_var = tk.StringVar(value="Select or create a user to begin")
+        # Status bar (status_var already created above, before tabs)
         self.status_label = ttk.Label(
             main_frame,
             textvariable=self.status_var,
