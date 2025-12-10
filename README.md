@@ -1,6 +1,6 @@
 # 🤖 JobFinder - Unified Job Search & Resume Platform
 
-An intelligent job search automation tool that uses LLM-powered resume matching to find and score job opportunities, plus a resume generator with PDF import.
+An intelligent job search automation tool that uses LLM-powered resume matching to find and score job opportunities, plus a resume generator with PDF import that vectorizes your resume to allow more comprehensive matching with a larger repository of career achievments. Still currently in testing as of now.  
 
 ## 📁 Project Structure
 
