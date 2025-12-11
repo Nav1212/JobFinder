@@ -6,6 +6,7 @@ Uses Ollama embeddings with mxbai-embed-large model (1024 dims)
 
 import os
 import pickle
+import json
 import numpy as np
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
@@ -376,6 +377,93 @@ class UserRAGIndex:
                 })
         
         return results
+
+    def judge_relevance(self, query: str, candidates: List[Dict[str, Any]], 
+                        model: str = "llama3.1:8b", max_items: int = 10) -> List[Dict[str, Any]]:
+        """
+        Re-score retrieved sentences with an LLM judge (0-100 relevance).
+        
+        Args:
+            query: The job description/title text to match against.
+            candidates: Retrieved sentences with metadata.
+            model: LLM model to use for judging.
+            max_items: Maximum candidates to include in the prompt.
+        
+        Returns:
+            List of candidates with added 'judge_score' and 'judge_reason', sorted by judge_score.
+        """
+        if not candidates:
+            return []
+        
+        # Trim to avoid huge prompts
+        limited = candidates[:max_items]
+        
+        # Build prompt with numbered items for easy mapping
+        items_block = []
+        for idx, item in enumerate(limited, 1):
+            section = item.get('metadata', {}).get('section', 'unknown')
+            category = item.get('metadata', {}).get('category', 'unknown')
+            items_block.append(
+                f"{idx}. [{section}/{category}] {item.get('text', '')}"
+            )
+        items_text = "\n".join(items_block)
+        
+        prompt = f"""
+You are an assistant scoring resume sentences for relevance to a job query.
+Give each sentence a relevance score 0-100 (integer). Use stricter grading: 100 means directly proves fit; 0 means unrelated.
+
+Job Query:
+{query[:1000]}
+
+Sentences:
+{items_text}
+
+Return JSON array only, with objects:
+[{{"idx": 1, "score": 0-100, "reason": "short why"}}]
+"""
+        try:
+            judge = LocalLLM(model=model)
+            raw = judge.generate(prompt, stream=False, temperature=0.0, timeout=60)
+            
+            # Extract JSON payload
+            start = raw.find('[')
+            end = raw.rfind(']') + 1
+            payload = raw[start:end] if start != -1 and end > start else raw
+            parsed = json.loads(payload)
+            
+            # Map idx -> scores
+            score_map = {}
+            if isinstance(parsed, list):
+                for entry in parsed:
+                    if not isinstance(entry, dict):
+                        continue
+                    idx = int(entry.get('idx', -1))
+                    score = entry.get('score')
+                    reason = entry.get('reason', '')
+                    if 1 <= idx <= len(limited) and isinstance(score, (int, float)):
+                        score_map[idx] = {'judge_score': int(score), 'judge_reason': str(reason)}
+        except Exception as e:
+            print(f"RAG judge scoring error: {e}")
+            score_map = {}
+        
+        # Attach scores; fallback to 0 if missing
+        for pos, item in enumerate(limited, 1):
+            meta = score_map.get(pos, {'judge_score': 0, 'judge_reason': 'not scored'})
+            item['judge_score'] = meta['judge_score']
+            item['judge_reason'] = meta['judge_reason']
+        
+        # Sort by judge_score (desc), fallback to original order
+        limited.sort(key=lambda x: x.get('judge_score', 0), reverse=True)
+        
+        # Append any untouched candidates (if we clipped for prompt)
+        if len(candidates) > len(limited):
+            rest = candidates[len(limited):]
+            for item in rest:
+                item['judge_score'] = 0
+                item['judge_reason'] = 'not scored'
+            limited.extend(rest)
+        
+        return limited
     
     def rebuild_from_sentences(self, sentences: Dict[str, Any]) -> int:
         """

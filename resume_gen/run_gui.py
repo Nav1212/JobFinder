@@ -1,10 +1,10 @@
 """
 Resume Generator - GUI Application
-Multi-user resume generation with hybrid TF-IDF + tag matching
+Simplified UI with user management, sentence library, settings, and RAG scoring view.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext, filedialog
+from tkinter import ttk, messagebox, simpledialog, scrolledtext
 from pathlib import Path
 import sys
 
@@ -16,6 +16,8 @@ from resume_gen.user_manager import UserManager
 from resume_gen.generator import ResumeGenerator
 from resume_gen.import_review_tab import ImportReviewTab
 from resume_gen.settings_tab import SettingsTab
+from resume_gen.gui.rag_tab import RAGTab
+from resume_gen.gui.rag_audit_tab import RAGAuditTab
 
 
 class ResumeGeneratorGUI:
@@ -27,9 +29,8 @@ class ResumeGeneratorGUI:
         
         self.user_manager = UserManager()
         self.current_user = None
-        self.generator = None
+        self.generator = None  # Lazy init when a user is selected
         
-        # Configure style
         style = ttk.Style()
         style.theme_use('clam')
         
@@ -37,56 +38,68 @@ class ResumeGeneratorGUI:
         self.refresh_user_list()
     
     def create_widgets(self):
-        """Create main GUI layout"""
         # Main container
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill='both', expand=True)
         
-        # Title
         ttk.Label(
             main_frame,
-            text="📄 Resume Generator",
+            text="Resume Generator",
             font=('Arial', 16, 'bold')
         ).pack(pady=(0, 10))
         
-        # Create status var BEFORE tabs that need it
         self.status_var = tk.StringVar(value="Select or create a user to begin")
         
-        # Create notebook (tabs)
+        # Notebook
         self.notebook = ttk.Notebook(main_frame)
         self.notebook.pack(fill='both', expand=True)
         
-        # Tab 1: User Management
+        # User tab
         self.user_tab = ttk.Frame(self.notebook, padding="15")
-        self.notebook.add(self.user_tab, text="👤 Users")
+        self.notebook.add(self.user_tab, text="Users")
         self.create_user_tab()
         
-        # Tab 2: Sentence Library
+        # Sentences tab
         self.sentences_tab = ttk.Frame(self.notebook, padding="15")
-        self.notebook.add(self.sentences_tab, text="📝 Sentences")
+        self.notebook.add(self.sentences_tab, text="Sentences")
         self.create_sentences_tab()
         
-        # Tab 3: Generate Resume
+        # Generate tab (placeholder)
         self.generate_tab = ttk.Frame(self.notebook, padding="15")
-        self.notebook.add(self.generate_tab, text="🎯 Generate")
+        self.notebook.add(self.generate_tab, text="Generate")
         self.create_generate_tab()
         
-        # Tab 4: Import Review
+        # Import Review tab
         self.import_tab = ImportReviewTab(
             self.notebook, 
             self.user_manager,
             status_callback=lambda msg: self.status_var.set(msg)
         )
-        self.notebook.add(self.import_tab, text="📥 Import PDF")
+        self.notebook.add(self.import_tab, text="Import PDF")
         
-        # Tab 5: Settings
+        # Settings tab
         self.settings_tab = SettingsTab(
             self.notebook,
             status_callback=lambda msg: self.status_var.set(msg)
         )
-        self.notebook.add(self.settings_tab, text="⚙️ Settings")
+        self.notebook.add(self.settings_tab, text="Settings")
+
+        # RAG Scoring tab
+        self.rag_tab = RAGTab(
+            self.notebook,
+            status_callback=lambda msg: self.status_var.set(msg)
+        )
+        self.notebook.add(self.rag_tab.frame, text="RAG Scoring")
         
-        # Status bar (status_var already created above, before tabs)
+        # RAG Audit tab (embedding accuracy)
+        self.rag_audit_tab = RAGAuditTab(
+            self.notebook,
+            self.user_manager,
+            status_callback=lambda msg: self.status_var.set(msg)
+        )
+        self.notebook.add(self.rag_audit_tab.frame, text="RAG Audit")
+        
+        # Status bar
         self.status_label = ttk.Label(
             main_frame,
             textvariable=self.status_var,
@@ -96,30 +109,24 @@ class ResumeGeneratorGUI:
         )
         self.status_label.pack(fill='x', pady=(10, 0))
     
+    # ---------------- User tab ----------------
     def create_user_tab(self):
-        """Create user management tab"""
-        # Left side: user list
         left_frame = ttk.LabelFrame(self.user_tab, text="Users", padding="10")
         left_frame.pack(side='left', fill='both', expand=True, padx=(0, 10))
         
-        # User listbox
         self.user_listbox = tk.Listbox(left_frame, font=('Arial', 11), height=15)
         self.user_listbox.pack(fill='both', expand=True)
         self.user_listbox.bind('<<ListboxSelect>>', self.on_user_select)
         
-        # User buttons
-        user_btn_frame = ttk.Frame(left_frame)
-        user_btn_frame.pack(fill='x', pady=(10, 0))
+        btn_frame = ttk.Frame(left_frame)
+        btn_frame.pack(fill='x', pady=(10, 0))
+        ttk.Button(btn_frame, text="New User", command=self.create_user).pack(side='left', padx=(0, 5))
+        ttk.Button(btn_frame, text="Delete", command=self.delete_user).pack(side='left', padx=(0, 5))
+        ttk.Button(btn_frame, text="Refresh", command=self.refresh_user_list).pack(side='right')
         
-        ttk.Button(user_btn_frame, text="➕ New User", command=self.create_user).pack(side='left', padx=(0, 5))
-        ttk.Button(user_btn_frame, text="🗑️ Delete", command=self.delete_user).pack(side='left')
-        ttk.Button(user_btn_frame, text="🔄 Refresh", command=self.refresh_user_list).pack(side='right')
-        
-        # Right side: user profile
         right_frame = ttk.LabelFrame(self.user_tab, text="Profile", padding="10")
         right_frame.pack(side='right', fill='both', expand=True)
         
-        # Profile fields
         ttk.Label(right_frame, text="Name:").grid(row=0, column=0, sticky='w', pady=5)
         self.profile_name_var = tk.StringVar()
         ttk.Entry(right_frame, textvariable=self.profile_name_var, width=30).grid(row=0, column=1, pady=5, padx=5)
@@ -128,403 +135,152 @@ class ResumeGeneratorGUI:
         self.profile_email_var = tk.StringVar()
         ttk.Entry(right_frame, textvariable=self.profile_email_var, width=30).grid(row=1, column=1, pady=5, padx=5)
         
-        ttk.Button(right_frame, text="💾 Save Profile", command=self.save_profile).grid(row=2, column=1, pady=15, sticky='e')
-        
-        # Stats
-        ttk.Separator(right_frame, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=10)
+        ttk.Button(right_frame, text="Save Profile", command=self.save_profile).grid(row=2, column=1, pady=10, sticky='e')
         
         self.stats_label = ttk.Label(right_frame, text="Select a user to see stats", foreground='gray')
-        self.stats_label.grid(row=4, column=0, columnspan=2, pady=5)
-    
-    def create_sentences_tab(self):
-        """Create sentence library tab"""
-        # Top: add sentence
-        add_frame = ttk.LabelFrame(self.sentences_tab, text="Add Sentence", padding="10")
-        add_frame.pack(fill='x', pady=(0, 10))
-        
-        # Type dropdown
-        type_frame = ttk.Frame(add_frame)
-        type_frame.pack(fill='x', pady=5)
-        
-        ttk.Label(type_frame, text="Type:").pack(side='left')
-        self.sentence_type_var = tk.StringVar(value="skills")
-        type_combo = ttk.Combobox(type_frame, textvariable=self.sentence_type_var, width=15,
-                                   values=["skills", "experience", "achievements", "projects", "education", "certifications"])
-        type_combo.pack(side='left', padx=5)
-        
-        ttk.Label(type_frame, text="Category:").pack(side='left', padx=(15, 0))
-        self.sentence_category_var = tk.StringVar()
-        self.category_entry = ttk.Entry(type_frame, textvariable=self.sentence_category_var, width=15)
-        self.category_entry.pack(side='left', padx=5)
-        
-        ttk.Label(type_frame, text="Tags (comma-sep):").pack(side='left', padx=(15, 0))
-        self.sentence_tags_var = tk.StringVar()
-        ttk.Entry(type_frame, textvariable=self.sentence_tags_var, width=20).pack(side='left', padx=5)
-        
-        # Sentence text
-        text_frame = ttk.Frame(add_frame)
-        text_frame.pack(fill='x', pady=5)
-        
-        ttk.Label(text_frame, text="Sentence:").pack(side='left')
-        self.sentence_text_var = tk.StringVar()
-        ttk.Entry(text_frame, textvariable=self.sentence_text_var, width=80).pack(side='left', padx=5, fill='x', expand=True)
-        ttk.Button(text_frame, text="➕ Add", command=self.add_sentence).pack(side='right')
-        
-        # Bottom: sentence list
-        list_frame = ttk.LabelFrame(self.sentences_tab, text="Sentence Library", padding="10")
-        list_frame.pack(fill='both', expand=True)
-        
-        # Treeview for sentences
-        columns = ('type', 'category', 'tags', 'text')
-        self.sentences_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=15)
-        
-        self.sentences_tree.heading('type', text='Type')
-        self.sentences_tree.heading('category', text='Category')
-        self.sentences_tree.heading('tags', text='Tags')
-        self.sentences_tree.heading('text', text='Sentence')
-        
-        self.sentences_tree.column('type', width=80)
-        self.sentences_tree.column('category', width=100)
-        self.sentences_tree.column('tags', width=120)
-        self.sentences_tree.column('text', width=450)
-        
-        # Scrollbar
-        vsb = ttk.Scrollbar(list_frame, orient="vertical", command=self.sentences_tree.yview)
-        self.sentences_tree.configure(yscrollcommand=vsb.set)
-        
-        self.sentences_tree.pack(side='left', fill='both', expand=True)
-        vsb.pack(side='right', fill='y')
-        
-        # Sentence buttons
-        sent_btn_frame = ttk.Frame(self.sentences_tab)
-        sent_btn_frame.pack(fill='x', pady=(10, 0))
-        
-        ttk.Button(sent_btn_frame, text="🗑️ Delete Selected", command=self.delete_sentence).pack(side='left')
-        ttk.Button(sent_btn_frame, text="🔄 Refresh", command=self.refresh_sentences).pack(side='right')
-    
-    def create_generate_tab(self):
-        """Create resume generation tab"""
-        # Left: job description input
-        left_frame = ttk.LabelFrame(self.generate_tab, text="Job Description", padding="10")
-        left_frame.pack(side='left', fill='both', expand=True, padx=(0, 10))
-        
-        self.job_text = scrolledtext.ScrolledText(left_frame, wrap=tk.WORD, font=('Arial', 10), height=20)
-        self.job_text.pack(fill='both', expand=True)
-        
-        # Generate button
-        btn_frame = ttk.Frame(left_frame)
-        btn_frame.pack(fill='x', pady=(10, 0))
-        
-        ttk.Button(btn_frame, text="🎯 Generate Resume", command=self.generate_resume).pack(side='left')
-        ttk.Button(btn_frame, text="📋 Paste from Clipboard", command=self.paste_job).pack(side='left', padx=10)
-        ttk.Button(btn_frame, text="🗑️ Clear", command=lambda: self.job_text.delete('1.0', 'end')).pack(side='right')
-        
-        # Right: Key elements + expandable formatted text
-        right_frame = ttk.LabelFrame(self.generate_tab, text="Generated Resume", padding="10")
-        right_frame.pack(side='right', fill='both', expand=True)
-        
-        # Key elements section (always visible)
-        key_frame = ttk.LabelFrame(right_frame, text="🔑 Key Elements", padding="10")
-        key_frame.pack(fill='both', expand=True, pady=(0, 5))
-        
-        self.key_elements_text = scrolledtext.ScrolledText(key_frame, wrap=tk.WORD, font=('Consolas', 9), height=12)
-        self.key_elements_text.pack(fill='both', expand=True)
-        
-        # Expandable formatted resume section
-        self.resume_expanded = tk.BooleanVar(value=False)
-        expand_btn_frame = ttk.Frame(right_frame)
-        expand_btn_frame.pack(fill='x', pady=(5, 0))
-        self.expand_btn = ttk.Button(expand_btn_frame, text="▶ Show Formatted Resume", command=self.toggle_resume_expand)
-        self.expand_btn.pack(side='left')
-        
-        # Frame for formatted resume (initially hidden)
-        self.resume_frame = ttk.LabelFrame(right_frame, text="📄 Formatted Resume", padding="10")
-        self.resume_text = scrolledtext.ScrolledText(self.resume_frame, wrap=tk.WORD, font=('Consolas', 10), height=10)
-        self.resume_text.pack(fill='both', expand=True)
-        
-        # Export button
-        export_frame = ttk.Frame(right_frame)
-        export_frame.pack(fill='x', pady=(10, 0))
-        
-        ttk.Button(export_frame, text="💾 Save to File", command=self.save_resume).pack(side='left')
-        ttk.Button(export_frame, text="📋 Copy to Clipboard", command=self.copy_resume).pack(side='left', padx=10)
-    
-    def toggle_resume_expand(self):
-        """Toggle visibility of formatted resume"""
-        if self.resume_expanded.get():
-            self.resume_frame.pack_forget()
-            self.expand_btn.config(text="▶ Show Formatted Resume")
-            self.resume_expanded.set(False)
-        else:
-            self.resume_frame.pack(fill='both', expand=True, pady=(5, 0))
-            self.expand_btn.config(text="▼ Hide Formatted Resume")
-            self.resume_expanded.set(True)
-    
-    # ==================== User Operations ====================
+        self.stats_label.grid(row=3, column=0, columnspan=2, pady=5)
     
     def refresh_user_list(self):
-        """Refresh the user listbox"""
+        users = self.user_manager.list_users()
         self.user_listbox.delete(0, tk.END)
-        for user in self.user_manager.list_users():
-            self.user_listbox.insert(tk.END, user)
+        for u in users:
+            self.user_listbox.insert(tk.END, u)
+        if users:
+            self.user_listbox.selection_set(0)
+            self.on_user_select()
+        else:
+            self.current_user = None
+            self.set_status("No users. Create one to begin.")
+            self.refresh_sentences_table()
     
-    def on_user_select(self, event):
-        """Handle user selection"""
-        selection = self.user_listbox.curselection()
-        if not selection:
+    def on_user_select(self, event=None):
+        sel = self.user_listbox.curselection()
+        if not sel:
             return
-        
-        username = self.user_listbox.get(selection[0])
-        self.current_user = username
-        
-        # Load user data
-        user = self.user_manager.get_user(username)
+        self.current_user = self.user_listbox.get(sel[0])
+        user = self.user_manager.get_user(self.current_user)
         if user:
             profile = user.get("profile", {})
             self.profile_name_var.set(profile.get("name", ""))
             self.profile_email_var.set(profile.get("email", ""))
-            
-            # Update stats
-            sentences = self.user_manager.get_sentences_flat(username)
-            tags = self.user_manager.get_all_tags(username)
-            self.stats_label.config(text=f"Sentences: {len(sentences)} | Tags: {len(tags)}")
-        
-        # Initialize generator
-        try:
-            self.generator = ResumeGenerator(username)
-            self.status_var.set(f"Loaded user: {username}")
-        except Exception as e:
-            self.status_var.set(f"Error loading user: {e}")
-        
-        # Update import tab with current user
-        self.import_tab.set_current_user(username)
-        
-        # Refresh sentences
-        self.refresh_sentences()
+            stats = self.user_manager.get_rag_index_stats(self.current_user) or {}
+            self.stats_label.config(text=f"Sentences: {len(self.user_manager.get_sentences_flat(self.current_user))} | RAG: {stats.get('total_sentences','?')} vectors")
+            self.set_status(f"Selected user: {self.current_user}")
+            self.refresh_sentences_table()
     
     def create_user(self):
-        """Create a new user"""
-        username = tk.simpledialog.askstring("New User", "Enter username:")
-        if not username:
+        name = simpledialog.askstring("New User", "Enter username:")
+        if not name:
             return
-        
-        username = username.strip().lower().replace(" ", "_")
-        
-        if self.user_manager.user_exists(username):
-            messagebox.showerror("Error", f"User '{username}' already exists")
-            return
-        
-        self.user_manager.create_user(username)
-        self.refresh_user_list()
-        self.status_var.set(f"Created user: {username}")
-        
-        # Select the new user
-        users = self.user_manager.list_users()
-        if username in users:
-            idx = users.index(username)
-            self.user_listbox.selection_clear(0, tk.END)
-            self.user_listbox.selection_set(idx)
-            self.user_listbox.event_generate('<<ListboxSelect>>')
+        if self.user_manager.create_user(name):
+            self.set_status(f"Created user {name}")
+            self.refresh_user_list()
+        else:
+            messagebox.showerror("Exists", f"User '{name}' already exists.")
     
     def delete_user(self):
-        """Delete selected user"""
         if not self.current_user:
-            messagebox.showwarning("No Selection", "Select a user first")
             return
-        
-        if messagebox.askyesno("Confirm Delete", f"Delete user '{self.current_user}' and all their data?"):
+        if messagebox.askyesno("Confirm", f"Delete user '{self.current_user}'?"):
             self.user_manager.delete_user(self.current_user)
-            self.current_user = None
-            self.generator = None
+            self.set_status(f"Deleted user {self.current_user}")
             self.refresh_user_list()
-            self.profile_name_var.set("")
-            self.profile_email_var.set("")
-            self.stats_label.config(text="Select a user to see stats")
-            self.status_var.set("User deleted")
     
     def save_profile(self):
-        """Save user profile"""
         if not self.current_user:
-            messagebox.showwarning("No Selection", "Select a user first")
             return
-        
-        self.user_manager.update_user_profile(self.current_user, {
+        profile = {
             "name": self.profile_name_var.get(),
             "email": self.profile_email_var.get()
-        })
-        self.status_var.set("Profile saved")
+        }
+        self.user_manager.update_user_profile(self.current_user, profile)
+        self.set_status("Profile saved")
     
-    # ==================== Sentence Operations ====================
+    # ---------------- Sentences tab ----------------
+    def create_sentences_tab(self):
+        add_frame = ttk.LabelFrame(self.sentences_tab, text="Add Sentence", padding="10")
+        add_frame.pack(fill='x', pady=(0, 10))
+        
+        type_frame = ttk.Frame(add_frame)
+        type_frame.pack(fill='x', pady=5)
+        ttk.Label(type_frame, text="Type:").pack(side='left')
+        self.sentence_type_var = tk.StringVar(value="skills")
+        ttk.Combobox(type_frame, textvariable=self.sentence_type_var, width=15,
+                     values=["skills", "experience", "achievements", "education", "certifications", "projects"]).pack(side='left', padx=5)
+        
+        ttk.Label(type_frame, text="Category:").pack(side='left', padx=(15, 0))
+        self.sentence_category_var = tk.StringVar()
+        ttk.Entry(type_frame, textvariable=self.sentence_category_var, width=15).pack(side='left', padx=5)
+        
+        ttk.Label(type_frame, text="Tags (comma):").pack(side='left', padx=(15, 0))
+        self.sentence_tags_var = tk.StringVar()
+        ttk.Entry(type_frame, textvariable=self.sentence_tags_var, width=20).pack(side='left', padx=5)
+        
+        text_frame = ttk.Frame(add_frame)
+        text_frame.pack(fill='x', pady=5)
+        ttk.Label(text_frame, text="Sentence:").pack(side='left')
+        self.sentence_text_var = tk.StringVar()
+        ttk.Entry(text_frame, textvariable=self.sentence_text_var, width=80).pack(side='left', padx=5, fill='x', expand=True)
+        ttk.Button(text_frame, text="Add", command=self.add_sentence).pack(side='right')
+        
+        list_frame = ttk.LabelFrame(self.sentences_tab, text="Sentence Library", padding="10")
+        list_frame.pack(fill='both', expand=True)
+        
+        columns = ('type', 'tags', 'text')
+        self.sentences_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=15)
+        self.sentences_tree.heading('type', text='Type')
+        self.sentences_tree.heading('tags', text='Tags')
+        self.sentences_tree.heading('text', text='Sentence')
+        self.sentences_tree.column('type', width=100)
+        self.sentences_tree.column('tags', width=150)
+        self.sentences_tree.column('text', width=550)
+        self.sentences_tree.pack(side='left', fill='both', expand=True)
+        
+        vsb = ttk.Scrollbar(list_frame, orient="vertical", command=self.sentences_tree.yview)
+        self.sentences_tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side='right', fill='y')
     
-    def refresh_sentences(self):
-        """Refresh sentence list for current user"""
-        # Clear tree
+    def refresh_sentences_table(self):
         for item in self.sentences_tree.get_children():
             self.sentences_tree.delete(item)
-        
         if not self.current_user:
             return
-        
-        sentences = self.user_manager.get_sentences_flat(self.current_user)
-        
-        for s in sentences:
-            tags_str = ", ".join(s.get("tags", []))
-            text = s.get("text", "")[:80] + ("..." if len(s.get("text", "")) > 80 else "")
-            
-            # Extract category from first tag if available
-            tags = s.get("tags", [])
-            category = tags[0] if tags else ""
-            other_tags = ", ".join(tags[1:]) if len(tags) > 1 else ""
-            
-            self.sentences_tree.insert('', 'end', values=(
-                s.get("type", ""),
-                category,
-                other_tags,
-                text
-            ))
+        flat = self.user_manager.get_sentences_flat(self.current_user)
+        for entry in flat:
+            self.sentences_tree.insert(
+                '', 'end',
+                values=(entry.get("type"), ", ".join(entry.get("tags", [])), entry.get("text"))
+            )
     
     def add_sentence(self):
-        """Add a sentence to current user's library"""
         if not self.current_user:
-            messagebox.showwarning("No User", "Select a user first")
+            messagebox.showwarning("No user", "Select a user first.")
             return
-        
         text = self.sentence_text_var.get().strip()
         if not text:
-            messagebox.showwarning("Empty", "Enter a sentence")
             return
-        
-        sentence_type = self.sentence_type_var.get()
+        stype = self.sentence_type_var.get()
         category = self.sentence_category_var.get().strip() or None
-        tags_str = self.sentence_tags_var.get().strip()
-        tags = [t.strip() for t in tags_str.split(",")] if tags_str else None
-        
-        self.user_manager.add_sentence(self.current_user, sentence_type, text, category, tags)
-        
-        # Clear inputs
-        self.sentence_text_var.set("")
-        self.sentence_tags_var.set("")
-        
-        # Refresh
-        self.refresh_sentences()
-        
-        # Reload generator
-        if self.generator:
-            self.generator.reload_sentences()
-        
-        self.status_var.set("Sentence added")
+        tags = [t.strip() for t in self.sentence_tags_var.get().split(',') if t.strip()]
+        ok = self.user_manager.add_sentence(self.current_user, stype, text, category=category, tags=tags)
+        if ok:
+            self.set_status("Sentence added")
+            self.sentence_text_var.set("")
+            self.refresh_sentences_table()
+        else:
+            messagebox.showerror("Error", "Failed to add sentence.")
     
-    def delete_sentence(self):
-        """Delete selected sentence"""
-        selection = self.sentences_tree.selection()
-        if not selection:
-            messagebox.showwarning("No Selection", "Select a sentence to delete")
-            return
-        
-        # Note: This is a simplified delete - in practice you'd want to track sentence IDs
-        messagebox.showinfo("Info", "Delete functionality requires sentence tracking. Use JSON editor for now.")
+    # ---------------- Generate tab ----------------
+    def create_generate_tab(self):
+        ttk.Label(self.generate_tab, text="Resume generation placeholder", font=('Arial', 12)).pack(pady=10)
+        ttk.Button(self.generate_tab, text="Generate (stub)", command=lambda: self.set_status("Generation not implemented in this simplified UI")).pack()
     
-    # ==================== Generation Operations ====================
-    
-    def paste_job(self):
-        """Paste job description from clipboard"""
-        try:
-            text = self.root.clipboard_get()
-            self.job_text.delete('1.0', 'end')
-            self.job_text.insert('1.0', text)
-        except:
-            messagebox.showwarning("Clipboard", "Could not paste from clipboard")
-    
-    def generate_resume(self):
-        """Generate resume from job description"""
-        if not self.generator:
-            messagebox.showwarning("No User", "Select a user first")
-            return
-        
-        job_desc = self.job_text.get('1.0', 'end-1c').strip()
-        if not job_desc:
-            messagebox.showwarning("Empty", "Enter a job description")
-            return
-        
-        self.status_var.set("Generating resume...")
-        self.root.update()
-        
-        try:
-            result = self.generator.generate_resume(job_desc)
-            
-            # Format key elements display
-            key_lines = []
-            key_lines.append("📊 MATCHING STATS")
-            key_lines.append(f"   Total sentences: {result['stats']['total_sentences']}")
-            key_lines.append(f"   Avg relevance:   {result['stats']['avg_score']:.1%}")
-            key_lines.append(f"   Tag matches:     {result['stats']['by_match_type'].get('tag', 0)}")
-            key_lines.append(f"   TF-IDF matches:  {result['stats']['by_match_type'].get('tfidf', 0)}")
-            key_lines.append("")
-            
-            key_lines.append("🔍 JOB KEYWORDS DETECTED")
-            keywords = result['job_analysis']['keywords'][:15]
-            key_lines.append(f"   {', '.join(keywords)}")
-            if result['job_analysis']['has_ml']:
-                key_lines.append("   ✓ ML/AI requirement detected")
-            if result['job_analysis']['has_leadership']:
-                key_lines.append("   ✓ Leadership requirement detected")
-            if result['job_analysis']['has_cloud']:
-                key_lines.append("   ✓ Cloud requirement detected")
-            key_lines.append("")
-            
-            key_lines.append("✅ MATCHED SENTENCES BY SECTION")
-            for section, items in result['sections'].items():
-                key_lines.append(f"\n   {section.upper()}:")
-                for item in items:
-                    score_pct = f"{item['score']:.0%}"
-                    match_icon = "🏷️" if item['match_type'] == 'tag' else "📝"
-                    text_preview = item['text'][:55] + "..." if len(item['text']) > 55 else item['text']
-                    kw_str = ""
-                    if item['matched_keywords']:
-                        kw_str = f" [{', '.join(item['matched_keywords'][:3])}]"
-                    key_lines.append(f"      {match_icon} {score_pct:>4} {text_preview}{kw_str}")
-            
-            self.key_elements_text.delete('1.0', 'end')
-            self.key_elements_text.insert('1.0', '\n'.join(key_lines))
-            
-            # Format full resume text
-            formatted = self.generator.format_resume_text(result)
-            self.resume_text.delete('1.0', 'end')
-            self.resume_text.insert('1.0', formatted)
-            
-            self.status_var.set(f"Generated resume with {result['stats']['total_sentences']} bullet points")
-        except Exception as e:
-            messagebox.showerror("Error", f"Generation failed: {e}")
-            self.status_var.set("Generation failed")
-    
-    def save_resume(self):
-        """Save resume to file"""
-        text = self.resume_text.get('1.0', 'end-1c')
-        if not text.strip():
-            messagebox.showwarning("Empty", "Generate a resume first")
-            return
-        
-        filepath = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
-        )
-        if filepath:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(text)
-            self.status_var.set(f"Saved to {filepath}")
-    
-    def copy_resume(self):
-        """Copy resume to clipboard"""
-        text = self.resume_text.get('1.0', 'end-1c')
-        self.root.clipboard_clear()
-        self.root.clipboard_append(text)
-        self.status_var.set("Copied to clipboard")
+    # ---------------- Helpers ----------------
+    def set_status(self, msg):
+        self.status_var.set(msg)
 
 
 def main():
-    # Need simpledialog for user creation
-    import tkinter.simpledialog
-    
     root = tk.Tk()
     app = ResumeGeneratorGUI(root)
     root.mainloop()
