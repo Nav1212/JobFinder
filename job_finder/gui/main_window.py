@@ -6,11 +6,12 @@ import sys
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from gui.config_tab import ConfigTab
-from gui.resumes_tab import ResumesTab
-from gui.sources_tab import SourcesTab
-from gui.run_tab import RunTab
+from job_finder.gui.config_tab import ConfigTab
+from job_finder.gui.resumes_tab import ResumesTab
+from job_finder.gui.sources_tab import SourcesTab
+from job_finder.gui.run_tab import RunTab
 
 
 class MainWindow:
@@ -31,7 +32,7 @@ class MainWindow:
         # Title
         title = ttk.Label(
             main_frame, 
-            text="🤖 JobFinder Bot Configuration", 
+            text="JobFinder Bot Configuration", 
             font=('Arial', 16, 'bold')
         )
         title.pack(pady=(0, 10))
@@ -60,10 +61,10 @@ class MainWindow:
         self.run_tab = RunTab(self.notebook, self)
         
         # Add tabs to notebook
-        self.notebook.add(self.config_tab.frame, text="⚙️  Setup")
-        self.notebook.add(self.resumes_tab.frame, text="📄  Resumes")
-        self.notebook.add(self.sources_tab.frame, text="🌐  Job Sources")
-        self.notebook.add(self.run_tab.frame, text="▶️  Run")
+        self.notebook.add(self.config_tab.frame, text="Setup")
+        self.notebook.add(self.resumes_tab.frame, text="Resumes")
+        self.notebook.add(self.sources_tab.frame, text="Job Sources")
+        self.notebook.add(self.run_tab.frame, text="Run")
         
         # Center window on screen
         self.center_window()

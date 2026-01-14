@@ -1,0 +1,285 @@
+{
+  "_metadata": {
+    "version": "1.0",
+    "created": "2025-11-29",
+    "description": "Multi-user resume sentence library for hybrid TF-IDF matching"
+  },
+  "users": {
+    "Navid": {
+      "profile": {
+        "name": "Navid",
+        "email": "nav.sarshar@gmail.com",
+        "created": "2025-12-10T20:31:57.949169"
+      },
+      "resume_filenames": [],
+      "sentences": {
+        "skills": {},
+        "experience": {},
+        "achievements": [],
+        "education": [],
+        "certifications": [],
+        "projects": []
+      },
+      "templates": {}
+    },
+    "navid_nav_sarshar": {
+      "profile": {
+        "name": "Navid (Nav) Sarshar",
+        "username": "navid_nav_sarshar",
+        "email": "nav.sarshar@gmail.com",
+        "phone": "416.561.1179",
+        "location": "",
+        "linkedin": "",
+        "education": [
+          {
+            "degree": "BASc",
+            "school": "Queen's University",
+            "year": "Sept 2018 – June 2023"
+          }
+        ],
+        "summary": ""
+      },
+      "resume_filenames": [
+        "Navid Sarshar Resume.pdf"
+      ],
+      "sentences": {
+        "skills": {
+          "C#": [
+            {
+              "text": "Languages:C#, Python (TensorFlow, PyTorch), C/C++, SQL (T-SQL, NoSQL), JavaScript, HTML/CSS",
+              "tags": [
+                "Python",
+                "TensorFlow",
+                "PyTorch",
+                "C/C++",
+                "SQL",
+                "T-SQL",
+                "NoSQL",
+                "JavaScript",
+                "HTML",
+                "CSS"
+              ]
+            }
+          ],
+          "azure": [
+            {
+              "text": "Tools:Azure Cloud, Power BI, Microsoft Fabric, ASP.NET, Data Factory, Git, Docker",
+              "tags": [
+                "cloud",
+                "power-bi",
+                "microsoft-fabric",
+                "asp-net",
+                "data-factory",
+                "git",
+                "docker"
+              ]
+            }
+          ],
+          "data architecture": [
+            {
+              "text": "Concepts:Data Architecture, ETL, Data Modeling, Performance Tuning, Warehousing, Analytics, ML",
+              "tags": [
+                "etl",
+                "data modeling",
+                "performance tuning",
+                "warehousing",
+                "analytics",
+                "machine learning"
+              ]
+            }
+          ],
+          "EMR": [
+            {
+              "text": "Ops, EMR Integration (Epic), Leadership & Mentoring",
+              "tags": [
+                "integration",
+                "leadership",
+                "mentoring"
+              ]
+            }
+          ]
+        },
+        "experience": {
+          "work experience": [
+            {
+              "text": "Experience",
+              "tags": [
+                "job history"
+              ]
+            }
+          ],
+          "software engineer": [
+            {
+              "text": "Software Engineer, Mackenzie Health May 2022 – Present",
+              "tags": [
+                "mackenzie health"
+              ]
+            }
+          ],
+          "machine learning": [
+            {
+              "text": "Designed and implemented ML modelsto predict equipment failure of over 10,000 RTLS devices.",
+              "tags": [
+                "predictive maintenance",
+                "equipment failure",
+                "RTLS"
+              ]
+            },
+            {
+              "text": "Student Researcher (ML), University of Toronto Jun 2019 – Aug 2019",
+              "tags": [
+                "research"
+              ]
+            },
+            {
+              "text": "•Developed ML monitoring solutions supporting a solar microgrid research project.",
+              "tags": [
+                "monitoring",
+                "solar energy",
+                "microgrid"
+              ]
+            }
+          ],
+          "asp.net": [
+            {
+              "text": "Built an ASP.NET API to centralize web app development and automation development, serving as the backend for four websites.",
+              "tags": [
+                "api",
+                "backend",
+                "web development"
+              ]
+            }
+          ],
+          "web development": [
+            {
+              "text": "•Developed a web app for assigning security badges integrated with Microsoft Active Directory.",
+              "tags": [
+                "security",
+                "Microsoft Active Directory"
+              ]
+            }
+          ],
+          "Microsoft Fabric": [
+            {
+              "text": "•Migrated reporting to Microsoft Fabric, creating + Power BI reports for real-time analytics.",
+              "tags": [
+                "Power BI",
+                "data analytics"
+              ]
+            }
+          ],
+          "ASP.NET": [
+            {
+              "text": "•Developed an ASP.NET app to monitor devices using live data and an Azure-hosted ML model.",
+              "tags": [
+                "Azure",
+                "Machine Learning"
+              ]
+            }
+          ],
+          "mentoring": [
+            {
+              "text": "Mentoring and coaching for three direct reports.",
+              "tags": [
+                "coaching",
+                "leadership"
+              ]
+            }
+          ],
+          "mobile app": [
+            {
+              "text": "Designed a mobile app for solar microgrid monitoring (Android & iOS using Swift and Java)",
+              "tags": [
+                "android",
+                "ios",
+                "swift",
+                "java",
+                "solar microgrid monitoring"
+              ]
+            }
+          ],
+          "neural networks": [
+            {
+              "text": "Implemented aneural networkon FPGA using LabVIEW and C++.",
+              "tags": [
+                "FPGA",
+                "LabVIEW",
+                "C++"
+              ]
+            }
+          ],
+          "autonomous drone": [
+            {
+              "text": "Autonomous Drone for Hide and Seek June 2025 - now",
+              "tags": [
+                "hide and seek"
+              ]
+            }
+          ],
+          "drone": [
+            {
+              "text": "Assembled an S500 drone, programming its autonomous flight control using PX4 and a camera-based system processed on Azure for image recognition and target identification.",
+              "tags": [
+                "programming",
+                "PX4",
+                "Azure",
+                "image recognition",
+                "target identification"
+              ]
+            }
+          ],
+          "AI": [
+            {
+              "text": "AI EMR SummarizerAugust 2024 - December 2024",
+              "tags": [
+                "EMR",
+                "Summarizer"
+              ]
+            }
+          ],
+          "Python": [
+            {
+              "text": "Created a Python application to auto-fill insurance forms by merging EMR data with LLM outputs.",
+              "tags": [
+                "EMR",
+                "LLM",
+                "Natural Language Processing"
+              ]
+            }
+          ],
+          "workflow": [
+            {
+              "text": "Worked with physicians to ensure a safe, privacy-conscious workflow integration.",
+              "tags": [
+                "integration",
+                "physicians"
+              ]
+            }
+          ],
+          "Azure": [
+            {
+              "text": "EMR System Using Azure & Blockchain (DAG Network)September 2022 - June 2023",
+              "tags": [
+                "Blockchain",
+                "EMR System"
+              ]
+            },
+            {
+              "text": "Developed an EMR interoperability solution using Azure backend services and DAG blockchain for se-",
+              "tags": [
+                "backend services",
+                "blockchain",
+                "EMR interoperability"
+              ]
+            }
+          ]
+        },
+        "achievements": [],
+        "education": [],
+        "certifications": [],
+        "projects": []
+      },
+      "templates": {}
+    }
+  }
+}

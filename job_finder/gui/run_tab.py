@@ -102,6 +102,33 @@ class RunTab:
         )
         self.workers_scale.pack(side='left', fill='x', expand=True, padx=(10, 10))
         
+        # RAG User selection (for vectorized matching from Resume Generator)
+        rag_frame = ttk.Frame(settings_frame)
+        rag_frame.pack(fill='x', pady=5)
+        
+        ttk.Label(rag_frame, text="Resume Profile:", width=15).pack(side='left')
+        self.rag_user_var = tk.StringVar(value="(auto-detect)")
+        self.rag_user_combo = ttk.Combobox(
+            rag_frame,
+            textvariable=self.rag_user_var,
+            state='readonly',
+            width=25
+        )
+        self.rag_user_combo.pack(side='left', padx=(10, 5))
+        
+        ttk.Button(
+            rag_frame,
+            text="🔄",
+            width=3,
+            command=self._refresh_rag_users
+        ).pack(side='left')
+        
+        self.rag_status_label = ttk.Label(rag_frame, text="", foreground='gray')
+        self.rag_status_label.pack(side='left', padx=(10, 0))
+        
+        # Initial load of RAG users
+        self._refresh_rag_users()
+        
         # Control buttons
         btn_frame = ttk.Frame(self.frame)
         btn_frame.pack(fill='x', pady=(0, 10))
@@ -176,8 +203,8 @@ class RunTab:
             messagebox.showwarning("Already Running", "Bot is already running")
             return
         
-        # Validate config exists
-        config_path = Path(__file__).parent.parent / 'config.yaml'
+        # Validate config exists (at project root)
+        config_path = Path(__file__).parent.parent.parent / 'config.yaml'
         if not config_path.exists():
             messagebox.showerror(
                 "Config Missing",
@@ -189,6 +216,7 @@ class RunTab:
         min_score = self.min_score_var.get()
         high_threshold = self.high_threshold_var.get()
         workers = self.workers_var.get()
+        rag_user = self.rag_user_var.get()
         
         cmd = [
             sys.executable,
@@ -198,6 +226,10 @@ class RunTab:
             '--high-threshold', str(high_threshold),
             '--workers', str(workers)
         ]
+        
+        # Add RAG user if selected (not auto-detect)
+        if rag_user and rag_user != "(auto-detect)":
+            cmd.extend(['--rag-user', rag_user])
         
         self.log(f"Starting: {' '.join(cmd)}", 'info')
         self.log("=" * 70, 'info')
@@ -340,3 +372,35 @@ class RunTab:
     def clear_output(self):
         """Clear console output"""
         self.console.delete('1.0', 'end')
+    
+    def _refresh_rag_users(self):
+        """Refresh list of users from Resume Generator"""
+        try:
+            # Import user manager
+            from resume_gen.user_manager import UserManager
+            
+            um = UserManager()
+            users = um.list_users()
+            
+            # Build list with auto-detect option
+            options = ["(auto-detect)"] + sorted(users)
+            self.rag_user_combo['values'] = options
+            
+            if users:
+                self.rag_status_label.config(
+                    text=f"({len(users)} profiles available)",
+                    foreground='green'
+                )
+            else:
+                self.rag_status_label.config(
+                    text="(no profiles - import in Resume Generator)",
+                    foreground='orange'
+                )
+                
+        except Exception as e:
+            self.rag_user_combo['values'] = ["(auto-detect)"]
+            self.rag_status_label.config(
+                text=f"(error loading profiles)",
+                foreground='red'
+            )
+            print(f"Error loading RAG users: {e}")

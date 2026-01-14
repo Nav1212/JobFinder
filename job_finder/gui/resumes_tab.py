@@ -10,7 +10,8 @@ class ResumesTab:
     def __init__(self, parent, main_window):
         self.parent = parent
         self.main_window = main_window
-        self.resumes_dir = Path(__file__).parent.parent.parent / 'Resumes'
+        # Resumes folder is at VibeCoding level (parent of JobFinderBot)
+        self.resumes_dir = Path(__file__).parent.parent.parent.parent / 'Resumes'
         
         # Create main frame
         self.frame = ttk.Frame(parent, padding="20")

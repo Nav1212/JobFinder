@@ -1,4 +1,4 @@
-"""
+﻿"""
 Job Finder Bot - Automated job search with LLM-based resume matching
 Scrapes multiple job boards and sends email notifications for high-match opportunities
 ASYNC VERSION - Uses threading for parallel API calls and LLM analysis
@@ -7,7 +7,7 @@ ASYNC VERSION - Uses threading for parallel API calls and LLM analysis
 import sys
 import os
 
-# Fix Windows console encoding for Unicode characters (✓, ⚠, ✗, etc.)
+# Fix Windows console encoding for Unicode characters (âœ“, âš , âœ—, etc.)
 if sys.platform == 'win32':
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -35,13 +35,32 @@ import queue
 import html
 import re
 import yaml
-from database import DatabaseManager
+try:
+    from .database import DatabaseManager
+except ImportError:
+    from database import DatabaseManager
 
-# Add LLMStuff to path for LocalLLM import
+# Import shared LLM client from core
 import os
-llm_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "LLMStuff")
-sys.path.append(llm_path)
-from simple_llm_chat import LocalLLM
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.llm_client import LocalLLM
+
+# RAG integration (lazy loaded)
+_rag_module = None
+_rag_warning_shown = False
+
+def _get_rag_module():
+    """Lazy load RAG module"""
+    global _rag_module
+    if _rag_module is None:
+        try:
+            from core import resume_rag
+            _rag_module = resume_rag
+        except ImportError as e:
+            print(f"Warning: RAG module not available: {e}")
+            _rag_module = False
+    return _rag_module if _rag_module else None
 
 try:
     import PyPDF2
@@ -51,7 +70,7 @@ except ImportError:
 
 
 class JobFinder:
-    def __init__(self, resume_path, email_config=None, db_path=None):
+    def __init__(self, resume_path, email_config=None, db_path=None, rag_user=None):
         """
         Initialize job finder with resume and optional email configuration
         
@@ -59,9 +78,11 @@ class JobFinder:
             resume_path: Path to PDF resume file
             email_config: Dict with 'sender', 'password', 'recipient' for Gmail SMTP
             db_path: Path to database file (optional, defaults to jobs_database.db)
+            rag_user: Optional username from Resume Generator for vectorized matching
         """
         self.resume_path = resume_path
         self.email_config = email_config
+        self.rag_user = rag_user  # Store for later use
         self.resume_text = self.extract_resume_text(resume_path)
         
         # Initialize Database
@@ -70,7 +91,7 @@ class JobFinder:
         # Initialize LLM for job matching
         try:
             self.llm = LocalLLM("qwen2.5:3b")
-            print("✓ LLM initialized (qwen2.5:3b)")
+            print("âœ“ LLM initialized (qwen2.5:3b)")
         except Exception as e:
             print(f"Warning: Could not initialize LLM: {e}")
             print("Make sure Ollama is running: ollama serve")
@@ -109,7 +130,7 @@ class JobFinder:
         if self.email_config and not self.email_config.get('recipient'):
             self.email_config['recipient'] = self.resume_email
             if self.resume_email:
-                print(f"✓ Email recipient set to: {self.resume_email}")
+                print(f"âœ“ Email recipient set to: {self.resume_email}")
         
         # Register resume in database
         resume_name = Path(resume_path).stem
@@ -123,6 +144,10 @@ class JobFinder:
         # Load job sources from config file
         self.job_sources = self._load_job_sources()
         
+        # Initialize RAG index for this resume (if available)
+        self.rag_index = None
+        self._init_rag_index(resume_path)
+        
         # North America location keywords for filtering
         self.north_america_keywords = [
             'canada', 'canadian', 'ontario', 'quebec', 'british columbia', 'alberta', 'toronto', 'vancouver', 'montreal', 'calgary', 'ottawa',
@@ -134,10 +159,11 @@ class JobFinder:
     
     def _load_job_sources(self):
         """Load job sources from config file"""
-        config_file = Path(__file__).parent / 'job_sources.json'
+        # Job sources at project root
+        config_file = Path(__file__).parent.parent / 'job_sources.json'
         
         if not config_file.exists():
-            print(f"⚠ Config file not found: {config_file}")
+            print(f"âš  Config file not found: {config_file}")
             return {'api_sources': [], 'playwright_sources': [], 'scraping_sources': []}
         
         try:
@@ -148,12 +174,56 @@ class JobFinder:
             enabled_playwright = [s for s in sources.get('playwright_sources', []) if s.get('enabled', False)]
             enabled_scraping = [s for s in sources.get('scraping_sources', []) if s.get('enabled', False)]
             
-            print(f"✓ Loaded {len(enabled_apis)} API sources, {len(enabled_playwright)} Playwright sources, {len(enabled_scraping)} scraping sources")
+            print(f"âœ“ Loaded {len(enabled_apis)} API sources, {len(enabled_playwright)} Playwright sources, {len(enabled_scraping)} scraping sources")
             
             return sources
         except Exception as e:
-            print(f"⚠ Error loading job sources config: {e}")
+            print(f"âš  Error loading job sources config: {e}")
             return {'api_sources': [], 'playwright_sources': [], 'scraping_sources': []}
+    
+    def _init_rag_index(self, resume_path):
+        """Initialize RAG index for resume-based semantic matching"""
+        global _rag_warning_shown
+        
+        rag = _get_rag_module()
+        if not rag:
+            return
+        
+        try:
+            indexes_dir = str(Path(__file__).parent.parent / 'resume_gen' / 'indexes')
+            username = None
+            
+            # Use explicit rag_user if provided, otherwise try auto-detection
+            if self.rag_user:
+                username = self.rag_user
+                print(f"âœ“ Using specified Resume Generator profile: {username}")
+            else:
+                # Try to find user by resume filename (auto-detect)
+                resume_filename = Path(resume_path).name
+                username = rag.get_username_from_filename(resume_filename, indexes_dir)
+            
+            if username:
+                idx = rag.UserRAGIndex(username, indexes_dir)
+                if idx.exists():
+                    self.rag_index = idx
+                    stats = idx.get_stats()
+                    print(f"âœ“ RAG index loaded for {username}: {stats['total_sentences']} sentences")
+                else:
+                    if not _rag_warning_shown:
+                        print(f"âš  RAG index not found for {username}.")
+                        print("  To create one: Open Resume Generator GUI â†’ Import tab â†’ Parse & import your resume")
+                        _rag_warning_shown = True
+            else:
+                if not _rag_warning_shown:
+                    resume_filename = Path(resume_path).name
+                    print(f"âš  Resume '{resume_filename}' not linked to any user profile.")
+                    print("  To set up RAG matching: Open Resume Generator GUI â†’ Import your resume")
+                    print("  Or specify --rag-user to use a specific profile.")
+                    print("  Falling back to simple text truncation for job matching.")
+                    _rag_warning_shown = True
+                    
+        except Exception as e:
+            print(f"âš  Error loading RAG index: {e}")
         
     def extract_email_from_resume(self):
         """Extract email address from resume text using regex"""
@@ -166,10 +236,10 @@ class JobFinder:
         
         if matches:
             email = matches[0]  # Take first email found
-            print(f"✓ Extracted email from resume: {email}")
+            print(f"âœ“ Extracted email from resume: {email}")
             return email
         else:
-            print("⚠ No email found in resume")
+            print("âš  No email found in resume")
             return None
     
     def _is_north_america(self, location):
@@ -197,7 +267,7 @@ class JobFinder:
                 text = ""
                 for page in pdf_reader.pages:
                     text += page.extract_text()
-                print(f"✓ Extracted resume text ({len(text)} characters)")
+                print(f"âœ“ Extracted resume text ({len(text)} characters)")
                 return text
         except Exception as e:
             print(f"Error reading resume PDF: {e}")
@@ -231,7 +301,7 @@ class JobFinder:
             response = requests.get(url, params=params, headers=headers, timeout=15)
             
             if response.status_code == 403:
-                print(f"    ⚠ Indeed blocked request (403) - site requires browser. Skipping.")
+                print(f"    âš  Indeed blocked request (403) - site requires browser. Skipping.")
                 return jobs
             
             response.raise_for_status()
@@ -297,7 +367,7 @@ class JobFinder:
             response = requests.get(url, params=params, headers=headers, timeout=15)
             
             if response.status_code == 403:
-                print(f"    ⚠ LinkedIn blocked request (403) - may require login. Skipping.")
+                print(f"    âš  LinkedIn blocked request (403) - may require login. Skipping.")
                 return jobs
             
             response.raise_for_status()
@@ -364,7 +434,7 @@ class JobFinder:
             response = requests.get(url, params=params, headers=headers, timeout=15)
             
             if response.status_code == 403:
-                print(f"    ⚠ Glassdoor blocked request (403) - site requires browser/login. Skipping.")
+                print(f"    âš  Glassdoor blocked request (403) - site requires browser/login. Skipping.")
                 return jobs
             
             response.raise_for_status()
@@ -428,7 +498,7 @@ class JobFinder:
             response = requests.get(url, params=params, headers=headers, timeout=15)
             
             if response.status_code == 403:
-                print(f"    ⚠ Dice blocked request (403) - site requires browser. Skipping.")
+                print(f"    âš  Dice blocked request (403) - site requires browser. Skipping.")
                 return jobs
             
             response.raise_for_status()
@@ -675,10 +745,10 @@ class JobFinder:
                             jobs.append(job_data)
                             self._queue_job_if_valid(job_data)
                 
-                print(f"  ✓ {source_name}: {len(jobs)} jobs → queue")
+                print(f"  âœ“ {source_name}: {len(jobs)} jobs â†’ queue")
                 
         except Exception as e:
-            print(f"  ✗ {source_name} error: {e}")
+            print(f"  âœ— {source_name} error: {e}")
         
         return jobs
     
@@ -787,10 +857,10 @@ class JobFinder:
                     else:
                         await asyncio.sleep(3)
                     
-                    print(f"  ✓ {source_name} page loaded")
+                    print(f"  âœ“ {source_name} page loaded")
                 except Exception as e:
                     await browser.close()
-                    print(f"  ✗ {source_name} Playwright navigation error: {e}")
+                    print(f"  âœ— {source_name} Playwright navigation error: {e}")
                     return
                 
                 # Get HTML
@@ -825,7 +895,7 @@ class JobFinder:
                         debug_file = f"debug_indeed_{source_name.replace(' ', '_')}.html"
                         with open(debug_file, 'w', encoding='utf-8') as f:
                             f.write(html)
-                        print(f"  📄 Saved HTML to {debug_file} for debugging")
+                        print(f"  ðŸ“„ Saved HTML to {debug_file} for debugging")
                     
                     for card in job_cards[:20]:
                         try:
@@ -1010,12 +1080,12 @@ class JobFinder:
                             continue
                 
                 if jobs:
-                    print(f"  ✓ {source_name} (Playwright): {len(jobs)} jobs → queue")
+                    print(f"  âœ“ {source_name} (Playwright): {len(jobs)} jobs â†’ queue")
                 else:
-                    print(f"  ⚠ {source_name} (Playwright): No jobs found (may be blocked or wrong selectors)")
+                    print(f"  âš  {source_name} (Playwright): No jobs found (may be blocked or wrong selectors)")
                     
         except Exception as e:
-            print(f"  ✗ {source_name} Playwright error: {e}")
+            print(f"  âœ— {source_name} Playwright error: {e}")
     
     async def scrape_website_async(self, session, url, params, search_term, location, source_name):
         """Async web scraper for job sites - feeds queue directly"""
@@ -1030,7 +1100,7 @@ class JobFinder:
         try:
             async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as response:
                 if response.status == 403:
-                    print(f"  ⚠ {source_name} blocked (403)")
+                    print(f"  âš  {source_name} blocked (403)")
                     return
                 
                 html = await response.text()
@@ -1143,12 +1213,12 @@ class JobFinder:
                             continue
                 
                 if jobs:
-                    print(f"  ✓ {source_name}: {len(jobs)} jobs → queue")
+                    print(f"  âœ“ {source_name}: {len(jobs)} jobs â†’ queue")
                 
         except asyncio.TimeoutError:
-            print(f"  ✗ {source_name} timeout")
+            print(f"  âœ— {source_name} timeout")
         except Exception as e:
-            print(f"  ✗ {source_name} error: {type(e).__name__}")
+            print(f"  âœ— {source_name} error: {type(e).__name__}")
     
     async def scrape_all_websites_async(self, search_terms, locations, countries):
         """Scrape all job sites concurrently - jobs fed to queue in real-time"""
@@ -1216,7 +1286,11 @@ class JobFinder:
             await asyncio.gather(*tasks, return_exceptions=True)
     
     def analyze_job_match(self, job):
-        """Use LLM to analyze job match and extract details (Unified Prompt)"""
+        """Use LLM to analyze job match and extract details (Unified Prompt)
+        
+        Uses RAG to retrieve relevant resume sections if available,
+        otherwise falls back to simple text truncation.
+        """
         if not self.llm or not self.resume_text:
             return {
                 'match_score': 0, 
@@ -1227,10 +1301,13 @@ class JobFinder:
                 'is_remote': False
             }
         
+        # Get resume context - use RAG if available, otherwise truncate
+        resume_context = self._get_resume_context_for_job(job)
+        
         prompt = f"""
 Analyze this job for a candidate.
 
-RESUME: {self.resume_text[:3000]}
+RESUME: {resume_context}
 
 JOB:
 Title: {job['title']}
@@ -1382,6 +1459,71 @@ Return JSON ONLY:
                 'is_remote': False
             }
     
+    def _get_resume_context_for_job(self, job):
+        """
+        Get relevant resume context for a job using RAG if available.
+        
+        Uses semantic search to find the most relevant resume sentences
+        for the job description. Falls back to simple truncation if RAG
+        is not available.
+        
+        Returns:
+            str: Resume context (max ~3000 chars)
+        """
+        # Try RAG retrieval first
+        if self.rag_index:
+            try:
+                # Build query from job title and key parts of description
+                query = f"{job['title']} {job['description'][:1000]}"
+                
+                # Retrieve top relevant sentences
+                results = self.rag_index.retrieve(query, top_k=10)
+                if results:
+                    judge_model = self.llm.model if getattr(self, 'llm', None) else "qwen2.5:3b"
+                    results = self.rag_index.judge_relevance(query, results, model=judge_model)
+                
+                if results:
+                    # Build context from retrieved sentences
+                    context_parts = []
+                    total_chars = 0
+                    max_chars = 2500  # Leave room for profile info
+                    
+                    for result in results:
+                        text = result['text']
+                        score = result.get('judge_score')
+                        prefix = f"[{score}/100] " if isinstance(score, int) else ""
+                        if total_chars + len(text) < max_chars:
+                            context_parts.append(f"- {prefix}{text}")
+                            total_chars += len(text) + len(prefix) + 2
+                            total_chars += len(text) + len(prefix) + 2
+                    # Add profile info (education, etc.) if available
+                    profile = self.rag_index.profile
+                    if profile:
+                        profile_parts = []
+                        if profile.get('education'):
+                            edu = profile['education']
+                            if isinstance(edu, list) and edu:
+                                edu_str = "; ".join([
+                                    f"{e.get('degree', '')} from {e.get('school', '')}" 
+                                    for e in edu[:2] if isinstance(e, dict)
+                                ])
+                                if edu_str:
+                                    profile_parts.append(f"Education: {edu_str}")
+                        if profile.get('summary'):
+                            profile_parts.append(f"Summary: {profile['summary'][:200]}")
+                        
+                        if profile_parts:
+                            context_parts.insert(0, "\n".join(profile_parts))
+                    
+                    if context_parts:
+                        return "\n".join(context_parts)
+                    
+            except Exception as e:
+                print(f"    RAG retrieval error: {e}, falling back to truncation")
+        
+        # Fallback: simple text truncation
+        return self.resume_text[:3000]
+    
     def _basic_match_analysis(self, job):
         """Fallback basic keyword matching if LLM fails"""
         resume_lower = self.resume_text.lower()
@@ -1465,9 +1607,9 @@ Return JSON ONLY:
                         with self.high_matches_lock:
                             self.high_matches.append(job)
                     
-                    print(f"  [Worker {worker_id}] ✓ {job['title']} at {job['company']}: {display_score}/100 ({analysis_time:.1f}s) (Queue: {queue_remaining})")
+                    print(f"  [Worker {worker_id}] âœ“ {job['title']} at {job['company']}: {display_score}/100 ({analysis_time:.1f}s) (Queue: {queue_remaining})")
                 else:
-                    print(f"  [Worker {worker_id}] ✗ {job['title']}: {display_score}/100 ({analysis_time:.1f}s) (Queue: {queue_remaining})")
+                    print(f"  [Worker {worker_id}] âœ— {job['title']}: {display_score}/100 ({analysis_time:.1f}s) (Queue: {queue_remaining})")
                 
                 self.job_queue.task_done()
                 
@@ -1482,7 +1624,7 @@ Return JSON ONLY:
     def send_top_jobs_email(self):
         """Send email with top 5 jobs for this resume"""
         if not self.email_config:
-            print("⚠ No email configuration provided. Skipping email.")
+            print("âš  No email configuration provided. Skipping email.")
             return
             
         top_jobs = self.db.get_top_jobs_for_resume(self.resume_id, limit=5)
@@ -1560,13 +1702,13 @@ Return JSON ONLY:
                 server.starttls()
                 server.login(self.email_config['sender'], self.email_config['password'])
                 server.send_message(msg)
-            print(f"✓ Email sent successfully to {self.email_config['recipient']}")
+            print(f"âœ“ Email sent successfully to {self.email_config['recipient']}")
             
             # Mark jobs as emailed in database
             self.db.mark_jobs_emailed(self.resume_id, job_urls)
             
         except Exception as e:
-            print(f"✗ Failed to send email: {e}")
+            print(f"âœ— Failed to send email: {e}")
 
     def format_email_html(self, high_matches):
         """Format high-match jobs as HTML email"""
@@ -1585,7 +1727,7 @@ Return JSON ONLY:
     </style>
 </head>
 <body>
-    <h1>🎯 High-Match Job Opportunities Found!</h1>
+    <h1>ðŸŽ¯ High-Match Job Opportunities Found!</h1>
     <p>Found {len(high_matches)} jobs matching your resume with 80+ match score:</p>
 """
         
@@ -1604,10 +1746,10 @@ Return JSON ONLY:
             <strong>Reasoning:</strong> {html.escape(analysis.get('reasoning', 'N/A'))}
         </div>
         <div class="matches">
-            <strong>✓ Key Matches:</strong> {html.escape(', '.join(analysis.get('key_matches', [])))}
+            <strong>âœ“ Key Matches:</strong> {html.escape(', '.join(analysis.get('key_matches', [])))}
         </div>
         <div class="gaps">
-            <strong>✗ Gaps:</strong> {html.escape(', '.join(analysis.get('gaps', [])) or 'None identified')}
+            <strong>âœ— Gaps:</strong> {html.escape(', '.join(analysis.get('gaps', [])) or 'None identified')}
         </div>
     </div>
 """
@@ -1647,7 +1789,7 @@ Return JSON ONLY:
         print(f"\n{'='*60}")
         print(f"JOB FINDER BOT (STREAMING) - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*60}\n")
-        print("Architecture: Scrapers → Queue → LLM Workers → Email")
+        print("Architecture: Scrapers â†’ Queue â†’ LLM Workers â†’ Email")
         print("Jobs analyzed in real-time as they're found!\n")
         
         start_time = time.time()
@@ -1664,7 +1806,7 @@ Return JSON ONLY:
             )
             worker.start()
             workers.append(worker)
-        print(f"✓ Workers ready and waiting for jobs\n")
+        print(f"âœ“ Workers ready and waiting for jobs\n")
         
         # Step 2: Scrape APIs and websites concurrently (they feed queue as they go)
         print("="*60)
@@ -1734,7 +1876,7 @@ Return JSON ONLY:
         asyncio.run(scrape_all_sources())
         scrape_time = time.time() - scrape_start
         
-        print(f"\n✓ All scraping complete in {scrape_time:.1f}s")
+        print(f"\nâœ“ All scraping complete in {scrape_time:.1f}s")
         print(f"  Queue size: {self.job_queue.qsize()} jobs pending analysis\n")
         
         # Step 3: Wait for all jobs in queue to be processed
@@ -1796,7 +1938,7 @@ Return JSON ONLY:
                 'high_matches': len(self.high_matches),
                 'jobs': self.jobs_found
             }, f, indent=2)
-        print(f"✓ Saved results to database and {json_file}")
+        print(f"âœ“ Saved results to database and {json_file}")
         
         # Save text report
         txt_file = f"job_report_{timestamp}.txt"
@@ -1829,7 +1971,7 @@ Return JSON ONLY:
                     analysis = job['analysis']
                     f.write(f"{analysis.get('match_score', 0)}/100 - {job['title']} at {job['company']} ({job['source']})\n")
         
-        print(f"✓ Saved report to database and {txt_file}")
+        print(f"âœ“ Saved report to database and {txt_file}")
 
 
 def main():
@@ -1839,11 +1981,12 @@ def main():
     parser.add_argument('--min-score', type=int, default=600, help='Minimum match score to save (default: 600/1000 = 60/100)')
     parser.add_argument('--high-threshold', type=int, default=800, help='High match threshold for email (default: 800/1000 = 80/100)')
     parser.add_argument('--workers', type=int, default=8, help='Number of parallel LLM worker threads (default: 8, max: 12)')
+    parser.add_argument('--rag-user', type=str, help='Resume Generator user profile for vectorized matching (overrides auto-detection)')
     
     args = parser.parse_args()
     
-    # Load configuration from config.yaml
-    config_path = Path(__file__).parent / 'config.yaml'
+    # Load configuration from config.yaml (at project root)
+    config_path = Path(__file__).parent.parent / 'config.yaml'
     if not config_path.exists():
         print("Error: config.yaml not found!")
         print("Please copy config.example.yaml to config.yaml and fill in your details.")
@@ -1859,12 +2002,15 @@ def main():
         'recipient': None  # Will be extracted from each resume
     }
     
+    # Project root is parent of job_finder folder
+    project_root = Path(__file__).parent.parent
+    
     # Determine which resumes to process
     resumes_to_process = []
     
     if args.auto:
         # Auto mode: process ALL resumes in Resumes folder
-        resumes_dir = Path(__file__).parent / config['paths']['resumes_dir']
+        resumes_dir = project_root / config['paths']['resumes_dir']
         if resumes_dir.exists():
             resumes_to_process = list(resumes_dir.glob("*.pdf"))
             print(f"\n{'='*60}")
@@ -1884,7 +2030,7 @@ def main():
     else:
         # Interactive mode
         print("\nAvailable resumes:")
-        resumes_dir = Path(__file__).parent / config['paths']['resumes_dir']
+        resumes_dir = project_root / config['paths']['resumes_dir']
         if resumes_dir.exists():
             resumes = list(resumes_dir.glob("*.pdf"))
             for i, resume in enumerate(resumes, 1):
@@ -1927,8 +2073,8 @@ def main():
         
         try:
             # Initialize job finder for this resume
-            db_path = Path(__file__).parent / config['paths']['database']
-            finder = JobFinder(str(resume_path), email_config, str(db_path))
+            db_path = project_root / config['paths']['database']
+            finder = JobFinder(str(resume_path), email_config, str(db_path), rag_user=args.rag_user)
             
             # Run job search
             results = finder.find_jobs(
@@ -1946,7 +2092,7 @@ def main():
             print(f"{'='*60}\n")
             
         except Exception as e:
-            print(f"\n✗ Error processing {resume_path.name}: {e}\n")
+            print(f"\nâœ— Error processing {resume_path.name}: {e}\n")
             continue
     
     print(f"\n{'='*60}")

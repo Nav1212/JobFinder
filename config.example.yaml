@@ -1,5 +1,6 @@
 # Job Finder Bot Configuration
 # Copy this file to config.yaml and fill in your details
+# Settings can also be edited via the GUI Settings tab
 
 email:
   sender: "your-email@gmail.com"
@@ -9,3 +10,50 @@ paths:
   resumes_dir: "../Resumes"  # Path to folder containing resume PDFs
   database: "../jobs_database.db"  # Database location (outside repo)
   logs_dir: "../JobFinderBot_Logs"  # Logs directory (outside repo)
+  rag_indexes_dir: "resume_gen/indexes"  # Per-user RAG index storage
+
+# RAG (Retrieval-Augmented Generation) settings for resume matching
+rag:
+  embedding_model: "mxbai-embed-large"  # Ollama embedding model (1024 dims)
+  similarity_threshold: 0.85  # Threshold for duplicate detection (0.0-1.0)
+  top_k: 10  # Number of similar sentences to retrieve for job matching
+
+# LLM Model Configuration
+# Different tasks use different sized models for optimal performance/speed tradeoff
+# Models are pulled from Ollama automatically when selected in the GUI
+models:
+  # Sentence parsing (extracting clean sentences from PDF text)
+  # Smaller/faster models work well since this is a structural task
+  # Options: llama3.2:1b (1.3GB), qwen2.5:1.5b (1GB), phi3:mini (2.2GB)
+  parsing_model: "llama3.2:1b"
+  
+  # Grading (scoring sentences for quality, impact, relevance)
+  # Medium models provide good judgment without being slow
+  # Options: llama3.2:3b (2GB), llama3.1:8b (4.7GB), mistral:7b (4.1GB), qwen2.5:7b (4.7GB)
+  grading_model: "llama3.1:8b"
+  
+  # Resume polishing (rewriting for impact, professional tone)
+  # Larger models produce higher quality rewrites
+  # For best results, use a different model than grading (warning shown in GUI if same)
+  # Options: llama3.1:8b (4.7GB), qwen2.5:7b (4.7GB), qwen2.5:32b (20GB), llama3.1:70b (40GB)
+  polishing_model: "llama3.1:8b"
+  
+  # Embedding model for vectorization (used by RAG)
+  # Options: mxbai-embed-large (670MB), nomic-embed-text (270MB), all-minilm (45MB)
+  embedding_model: "mxbai-embed-large"
+  
+  # Base URL for Ollama API
+  ollama_url: "http://localhost:11434"
+
+# Resume filtering settings
+# These control which parsed sentences are kept after PDF import
+resume_filter:
+  # Only keep sentences in these categories (others are discarded)
+  # Available categories: skills, experience, achievements, projects, education, certifications, summary
+  allowed_categories:
+    - skills
+    - experience
+  
+  # Minimum impact score (0-100) for a sentence to be kept
+  # Sentences with impact_score below this are discarded
+  min_impact_score: 1

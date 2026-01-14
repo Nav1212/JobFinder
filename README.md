@@ -1,9 +1,34 @@
-# 🤖 Job Finder Bot
+# 🤖 JobFinder - Unified Job Search & Resume Platform
 
-An intelligent job search automation tool that uses LLM-powered resume matching to find and score job opportunities from multiple sources.
+An intelligent job search automation tool that uses LLM-powered resume matching to find and score job opportunities, plus a resume generator with PDF import that vectorizes your resume to allow more comprehensive matching with a larger repository of career achievments. Still currently in testing as of now.  
+
+## 📁 Project Structure
+
+```
+JobFinderBot/
+├── run_job_finder.py    # Launch Job Finder GUI
+├── run_resume_gen.py    # Launch Resume Generator GUI
+├── config.yaml          # Configuration (email, paths)
+├── job_sources.json     # Job board API sources
+│
+├── core/                # Shared utilities
+│   └── llm_client.py    # Ollama LLM wrapper
+│
+├── job_finder/          # Job Finder module
+│   ├── job_finder_bot.py    # Main job search logic
+│   ├── database.py          # SQLite job tracking
+│   └── gui/                 # Tkinter GUI components
+│
+└── resume_gen/          # Resume Generator module
+    ├── user_manager.py      # Multi-user data management
+    ├── generator.py         # Resume generation with TF-IDF
+    ├── pdf_parser.py        # PDF import with LLM analysis
+    └── import_review_tab.py # PDF review interface
+```
 
 ## ✨ Features
 
+### Job Finder
 - **Multi-Source Scraping**: Aggregates jobs from LinkedIn, Indeed, Google Careers, Amazon Jobs, and more
 - **LLM-Powered Matching**: Uses local Ollama LLM (Qwen 2.5) to analyze job fit based on your resume
 - **Granular Scoring (0-1000)**: Advanced scoring system considering:
@@ -16,12 +41,18 @@ An intelligent job search automation tool that uses LLM-powered resume matching 
 - **SQLite Database**: Tracks all jobs, applications, and scores
 - **Email Notifications**: Sends top 5 job matches via Gmail SMTP
 - **Concurrent Processing**: 8 parallel LLM workers for fast analysis
-- **Async Scraping**: Efficient multi-source job aggregation
+
+### Resume Generator
+- **Multi-User Support**: Isolated sentence libraries per user
+- **PDF Import**: Parse existing resumes with LLM-powered analysis
+- **Three Quality Scores**: Categorization confidence, extraction quality, impact score
+- **Impact Suggestions**: AI-powered rewrites for stronger bullets
+- **TF-IDF + Tag Matching**: Hybrid sentence selection for tailored resumes
 
 ## 📋 Requirements
 
 - **Python 3.8+**
-- **Ollama** with `qwen2.5:3b` model
+- **Ollama** with `qwen2.5:3b` or `llama3.1:8b` model
 - Gmail account with App Password for email notifications
 
 ## 🚀 Quick Start
@@ -30,6 +61,7 @@ An intelligent job search automation tool that uses LLM-powered resume matching 
 
 ```bash
 pip install -r job_requirements.txt
+pip install -r resume_gen/requirements.txt
 ```
 
 ### 2. Install Ollama and Model

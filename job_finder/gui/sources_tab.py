@@ -9,7 +9,8 @@ class SourcesTab:
     def __init__(self, parent, main_window):
         self.parent = parent
         self.main_window = main_window
-        self.sources_file = Path(__file__).parent.parent / 'job_sources.json'
+        # Job sources at project root
+        self.sources_file = Path(__file__).parent.parent.parent / 'job_sources.json'
         self.sources_data = {}
         
         # Create main frame
@@ -51,7 +52,7 @@ class SourcesTab:
         
         self.tree = ttk.Treeview(
             tree_frame,
-            columns=('name', 'type', 'enabled', 'count'),
+            columns=('name', 'type', 'enabled', 'category'),
             show='tree headings',
             yscrollcommand=vsb.set,
             selectmode='browse'
@@ -61,13 +62,13 @@ class SourcesTab:
         self.tree.heading('name', text='Source Name')
         self.tree.heading('type', text='Type')
         self.tree.heading('enabled', text='Status')
-        self.tree.heading('count', text='URLs')
+        self.tree.heading('category', text='Tag')
         
-        self.tree.column('#0', width=150)
-        self.tree.column('name', width=200)
-        self.tree.column('type', width=100)
-        self.tree.column('enabled', width=80)
-        self.tree.column('count', width=60)
+        self.tree.column('#0', width=180)
+        self.tree.column('name', width=180)
+        self.tree.column('type', width=90)
+        self.tree.column('enabled', width=90)
+        self.tree.column('category', width=100)
         
         vsb.config(command=self.tree.yview)
         self.tree.pack(fill='both', expand=True)
@@ -81,6 +82,7 @@ class SourcesTab:
         
         ttk.Button(btn_frame, text="👁️ View Details", command=self.view_source).pack(side='left', padx=(0, 5))
         ttk.Button(btn_frame, text="🔄 Toggle Enable/Disable", command=self.toggle_source).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="➕ Add Source", command=self.add_source).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="✏️ Edit JSON", command=self.edit_json).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="🔄 Reload", command=self.load_sources).pack(side='left', padx=5)
         
@@ -88,7 +90,7 @@ class SourcesTab:
         info_frame = ttk.Frame(self.frame)
         info_frame.pack(fill='x', pady=(10, 0))
         
-        info_text = "ℹ️ Job sources are configured in job_sources.json. Double-click to view details or use 'Edit JSON' to modify."
+        info_text = "ℹ️ Sources organized by: Main (LinkedIn, Dice, APIs), Company Specific, Startups. Use '➕ Add Source' for custom sources."
         ttk.Label(
             info_frame,
             text=info_text,
@@ -114,52 +116,54 @@ class SourcesTab:
             
             total_sources = 0
             
-            # Group by category
-            categories = {}
+            # Get category definitions
+            categories_def = self.sources_data.get('categories', {
+                'main': {'name': 'Main Job Sites'},
+                'company_specific': {'name': 'Company Careers'},
+                'startups': {'name': 'Startup Jobs'}
+            })
             
-            # Handle both array-based and dict-based structures
-            sources_list = []
-            if isinstance(self.sources_data, dict):
-                # Check if it's array-based (api_sources, scraper_sources)
-                if 'api_sources' in self.sources_data or 'scraper_sources' in self.sources_data:
-                    for key in ['api_sources', 'scraper_sources', 'other_sources']:
-                        if key in self.sources_data and isinstance(self.sources_data[key], list):
-                            sources_list.extend(self.sources_data[key])
-                else:
-                    # Flat dict structure: {source_name: config}
-                    for source_name, source_config in self.sources_data.items():
-                        if isinstance(source_config, dict):
-                            source_config['name'] = source_name
-                            sources_list.append(source_config)
+            # Collect all sources with their categories
+            sources_by_category = {'main': [], 'company_specific': [], 'startups': [], 'other': []}
             
-            # Group sources by type
-            for source in sources_list:
-                if not isinstance(source, dict):
+            for source_type in ['api_sources', 'playwright_sources', 'scraping_sources']:
+                if source_type in self.sources_data:
+                    for src in self.sources_data[source_type]:
+                        if not isinstance(src, dict):
+                            continue
+                        cat = src.get('category', 'main')
+                        if cat not in sources_by_category:
+                            cat = 'other'
+                        sources_by_category[cat].append(src)
+            
+            # Category display info
+            category_icons = {
+                'main': '🌐 Main Job Sites',
+                'company_specific': '🏢 Company Careers',
+                'startups': '🚀 Startup Jobs',
+                'other': '📋 Other'
+            }
+            
+            # Add categories and sources to tree
+            for cat_key in ['main', 'company_specific', 'startups', 'other']:
+                sources = sources_by_category.get(cat_key, [])
+                if not sources:
                     continue
                 
-                source_name = source.get('name', 'Unknown')
-                source_type = source.get('type', 'unknown')
+                cat_name = category_icons.get(cat_key, cat_key)
+                cat_node = self.tree.insert('', 'end', text=cat_name, values=('', '', '', ''))
                 
-                if source_type not in categories:
-                    categories[source_type] = []
-                categories[source_type].append((source_name, source))
-            
-            # Add to tree
-            for category, sources in sorted(categories.items()):
-                cat_node = self.tree.insert('', 'end', text=f"📁 {category.upper()}", values=('', '', '', ''))
-                
-                for source_name, source_config in sorted(sources):
-                    enabled = source_config.get('enabled', True)
+                for source in sorted(sources, key=lambda x: x.get('name', '')):
+                    source_name = source.get('name', 'Unknown')
+                    source_type = source.get('type', 'unknown')
+                    enabled = source.get('enabled', True)
                     status = '✅ Enabled' if enabled else '❌ Disabled'
-                    
-                    urls = source_config.get('urls', [])
-                    url_count = len(urls) if isinstance(urls, list) else 1
                     
                     self.tree.insert(
                         cat_node,
                         'end',
                         text='',
-                        values=(source_name, category, status, url_count)
+                        values=(source_name, source_type, status, cat_key)
                     )
                     total_sources += 1
             
@@ -188,20 +192,14 @@ class SourcesTab:
         
         # Find source in data
         source_config = None
-        if isinstance(self.sources_data, dict):
-            # Array-based structure
-            if 'api_sources' in self.sources_data or 'scraper_sources' in self.sources_data:
-                for key in ['api_sources', 'scraper_sources', 'other_sources']:
-                    if key in self.sources_data and isinstance(self.sources_data[key], list):
-                        for src in self.sources_data[key]:
-                            if isinstance(src, dict) and src.get('name') == source_name:
-                                source_config = src
-                                break
-                    if source_config:
+        for source_type in ['api_sources', 'playwright_sources', 'scraping_sources']:
+            if source_type in self.sources_data:
+                for src in self.sources_data[source_type]:
+                    if isinstance(src, dict) and src.get('name') == source_name:
+                        source_config = src
                         break
-            else:
-                # Dict-based structure
-                source_config = self.sources_data.get(source_name)
+            if source_config:
+                break
         
         if not source_config:
             messagebox.showwarning("Not Found", f"Source '{source_name}' not found in data")
@@ -349,28 +347,19 @@ class SourcesTab:
         # Find and toggle source in data
         try:
             toggled = False
-            if isinstance(self.sources_data, dict):
-                # Array-based structure
-                if 'api_sources' in self.sources_data or 'scraper_sources' in self.sources_data:
-                    for key in ['api_sources', 'scraper_sources', 'other_sources']:
-                        if key in self.sources_data and isinstance(self.sources_data[key], list):
-                            for src in self.sources_data[key]:
-                                if isinstance(src, dict) and src.get('name') == source_name:
-                                    # Toggle enabled status
-                                    current_status = src.get('enabled', True)
-                                    src['enabled'] = not current_status
-                                    toggled = True
-                                    new_status = "enabled" if src['enabled'] else "disabled"
-                                    break
-                        if toggled:
+            new_status = ""
+            
+            for source_type in ['api_sources', 'playwright_sources', 'scraping_sources']:
+                if source_type in self.sources_data:
+                    for src in self.sources_data[source_type]:
+                        if isinstance(src, dict) and src.get('name') == source_name:
+                            current_status = src.get('enabled', True)
+                            src['enabled'] = not current_status
+                            toggled = True
+                            new_status = "enabled" if src['enabled'] else "disabled"
                             break
-                else:
-                    # Dict-based structure
-                    if source_name in self.sources_data:
-                        current_status = self.sources_data[source_name].get('enabled', True)
-                        self.sources_data[source_name]['enabled'] = not current_status
-                        toggled = True
-                        new_status = "enabled" if self.sources_data[source_name]['enabled'] else "disabled"
+                if toggled:
+                    break
             
             if not toggled:
                 messagebox.showerror("Error", f"Could not find source '{source_name}' in data")
@@ -388,3 +377,110 @@ class SourcesTab:
         except Exception as e:
             messagebox.showerror("Toggle Error", f"Failed to toggle source:\n{e}")
             self.main_window.set_status("Failed to toggle source", 'error')
+    
+    def add_source(self):
+        """Add a new custom job source"""
+        # Create add source dialog
+        add_window = tk.Toplevel(self.frame)
+        add_window.title("Add New Job Source")
+        add_window.geometry("500x400")
+        add_window.transient(self.frame.winfo_toplevel())
+        add_window.grab_set()
+        
+        # Form frame
+        form_frame = ttk.Frame(add_window, padding="20")
+        form_frame.pack(fill='both', expand=True)
+        
+        ttk.Label(form_frame, text="➕ Add New Job Source", font=('Arial', 12, 'bold')).grid(
+            row=0, column=0, columnspan=2, pady=(0, 15)
+        )
+        
+        # Name
+        ttk.Label(form_frame, text="Source Name:").grid(row=1, column=0, sticky='w', pady=5)
+        name_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=name_var, width=40).grid(row=1, column=1, pady=5, padx=(10, 0))
+        
+        # URL
+        ttk.Label(form_frame, text="URL:").grid(row=2, column=0, sticky='w', pady=5)
+        url_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=url_var, width=40).grid(row=2, column=1, pady=5, padx=(10, 0))
+        
+        # Type
+        ttk.Label(form_frame, text="Type:").grid(row=3, column=0, sticky='w', pady=5)
+        type_var = tk.StringVar(value="scraping")
+        type_combo = ttk.Combobox(form_frame, textvariable=type_var, values=["api", "playwright", "scraping"], width=37)
+        type_combo.grid(row=3, column=1, pady=5, padx=(10, 0))
+        
+        # Category
+        ttk.Label(form_frame, text="Category:").grid(row=4, column=0, sticky='w', pady=5)
+        category_var = tk.StringVar(value="startups")
+        cat_combo = ttk.Combobox(form_frame, textvariable=category_var, values=["company_specific", "startups"], width=37)
+        cat_combo.grid(row=4, column=1, pady=5, padx=(10, 0))
+        
+        # Parser (optional)
+        ttk.Label(form_frame, text="Parser:").grid(row=5, column=0, sticky='w', pady=5)
+        parser_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=parser_var, width=40).grid(row=5, column=1, pady=5, padx=(10, 0))
+        
+        # Description
+        ttk.Label(form_frame, text="Description:").grid(row=6, column=0, sticky='w', pady=5)
+        desc_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=desc_var, width=40).grid(row=6, column=1, pady=5, padx=(10, 0))
+        
+        # Note
+        ttk.Label(
+            form_frame, 
+            text="Note: New sources are added as disabled.\nYou may need to implement a parser in job_finder_bot.py",
+            foreground='gray',
+            font=('Arial', 8)
+        ).grid(row=7, column=0, columnspan=2, pady=(15, 0))
+        
+        # Buttons
+        btn_frame = ttk.Frame(form_frame)
+        btn_frame.grid(row=8, column=0, columnspan=2, pady=(20, 0))
+        
+        def save_source():
+            name = name_var.get().strip()
+            url = url_var.get().strip()
+            source_type = type_var.get()
+            category = category_var.get()
+            parser = parser_var.get().strip() or name.lower().replace(' ', '_')
+            desc = desc_var.get().strip()
+            
+            if not name or not url:
+                messagebox.showwarning("Missing Fields", "Name and URL are required")
+                return
+            
+            # Determine which array to add to
+            type_map = {'api': 'api_sources', 'playwright': 'playwright_sources', 'scraping': 'scraping_sources'}
+            array_key = type_map.get(source_type, 'scraping_sources')
+            
+            # Create source entry
+            new_source = {
+                "name": name,
+                "url": url,
+                "enabled": False,
+                "type": source_type,
+                "parser": parser,
+                "category": category,
+                "description": desc or f"Custom {category} source"
+            }
+            
+            # Add to data
+            if array_key not in self.sources_data:
+                self.sources_data[array_key] = []
+            self.sources_data[array_key].append(new_source)
+            
+            # Save
+            try:
+                with open(self.sources_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.sources_data, f, indent=2)
+                
+                self.load_sources()
+                add_window.destroy()
+                self.main_window.set_status(f"Added source: {name}", 'success')
+            except Exception as e:
+                messagebox.showerror("Save Error", f"Failed to save:\n{e}")
+        
+        ttk.Button(btn_frame, text="💾 Add Source", command=save_source).pack(side='left', padx=(0, 10))
+        ttk.Button(btn_frame, text="Cancel", command=add_window.destroy).pack(side='left')
